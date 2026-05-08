@@ -7,7 +7,7 @@ interface MatchDashboardProps {
 }
 
 type PendingAction = {
-  type: 'selectBatter' | 'selectBowler' | 'nextOver' | 'inningsTransition' | 'noBallRuns' | 'retireConfirmation' | 'runOut' | 'editTeams';
+  type: 'selectBatter' | 'selectBowler' | 'nextOver' | 'inningsTransition' | 'noBallRuns' | 'retireConfirmation' | 'runOut' | 'editTeams' | 'editOvers';
   step?: 'confirm' | 'select' | 'team1' | 'team2';
   message: string;
   replaceTarget?: 'strikerId' | 'nonStrikerId';
@@ -197,7 +197,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { undoHistory, ...stateWithoutHistory } = prev;
       newState.undoHistory = [...(prev.undoHistory || []), stateWithoutHistory].slice(-20);
-      
+
       const temp = newState.strikerId;
       newState.strikerId = newState.nonStrikerId;
       newState.nonStrikerId = temp;
@@ -205,8 +205,16 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
     });
   };
 
-  const retireBatter = (playerId: string) => {
+  const changeBatter = (playerId: string) => {
     setPendingAction({
+      type: 'selectBatter',
+      message: 'Change Batter',
+      replaceTarget: playerId === strikerId ? 'strikerId' : 'nonStrikerId',
+      isAutoTriggered: false
+    });
+  };
+
+  const retireBatter = (playerId: string) => {    setPendingAction({
       type: 'retireConfirmation',
       message: 'Retire Batter?',
       batterId: playerId,
@@ -437,6 +445,14 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
     });
   };
 
+  const handleEditOvers = () => {
+    setPendingAction({
+      type: 'editOvers',
+      message: 'Change Total Overs',
+      isAutoTriggered: false
+    });
+  };
+
   const updateTeamPlayers = (teamIdx: number, players: Player[]) => {
     setMatchState(prev => {
       const newTeams = [...prev.teams];
@@ -471,7 +487,10 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
               <p className="text-blue-100 text-sm font-medium uppercase tracking-wider">Overs / {maxOvers}</p>
             </div>
             {!matchWinner && (
-              <button onClick={handleEditTeams} className="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded font-bold uppercase tracking-wider">Edit Teams</button>
+              <div className="flex flex-col gap-1 mt-1">
+                <button onClick={handleEditTeams} className="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded font-bold uppercase tracking-wider w-full">Edit Teams</button>
+                <button onClick={handleEditOvers} className="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded font-bold uppercase tracking-wider w-full">Edit Overs</button>
+              </div>
             )}
           </div>
         </div>
@@ -539,7 +558,10 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                             {p!.name} {idx === 0 && !matchWinner && !pendingAction && <span className="text-blue-500 ml-1">*</span>}
                           </div>
                           {!matchWinner && !pendingAction && (
-                            <button onClick={() => retireBatter(p!.id)} className="text-[10px] bg-slate-800 text-slate-400 hover:text-red-400 px-2 py-1 rounded ml-2 uppercase font-bold">Retire</button>
+                            <div className="flex gap-2 ml-2">
+                              <button onClick={() => changeBatter(p!.id)} className="text-[10px] bg-slate-800 text-slate-400 hover:text-blue-400 px-2 py-1 rounded uppercase font-bold">Change</button>
+                              <button onClick={() => retireBatter(p!.id)} className="text-[10px] bg-slate-800 text-slate-400 hover:text-red-400 px-2 py-1 rounded uppercase font-bold">Retire</button>
+                            </div>
                           )}
                         </td>
                         <td className="px-4 py-4 text-right font-bold">{s.runs}</td>
@@ -780,6 +802,32 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                     <p className="text-lg">{nonStriker.name}</p>
                   </button>
                 )}
+              </div>
+            )}
+
+            {pendingAction.type === 'editOvers' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Total Overs</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={maxOvers}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value);
+                      if (val > 0) {
+                        setMatchState(prev => ({ ...prev, maxOvers: val }));
+                      }
+                    }}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-white text-lg focus:border-blue-500 outline-none transition-colors"
+                  />
+                </div>
+                <button
+                  onClick={() => setPendingAction(null)}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20"
+                >
+                  Done
+                </button>
               </div>
             )}
 
