@@ -64,9 +64,9 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
     <div className="space-y-8 animate-in fade-in duration-500 pb-12 px-4 max-w-md mx-auto">
       <div className="grid grid-cols-1 gap-6">
         {teams.map((team, idx) => (
-          <div key={team.id} className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+          <div key={team.id} className="bg-transparent border border-white/10 rounded-2xl p-5">
             <input 
-              className="bg-transparent text-xl font-bold mb-4 w-full outline-none border-b border-transparent focus:border-blue-500"
+              className="bg-transparent text-xl font-bold mb-4 w-full outline-none border-b border-transparent focus:border-white text-white transition-colors"
               value={team.name}
               onChange={(e) => {
                 const newTeams = [...teams];
@@ -76,15 +76,15 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
             />
             <ul className="space-y-2 mb-4">
               {team.players.map(player => (
-                <li key={player.id} className="flex justify-between items-center bg-slate-800/50 p-2 rounded px-3">
-                  <span>{player.name}</span>
-                  <button onClick={() => removePlayer(idx, player.id)} className="text-red-400 hover:text-red-300 p-2">×</button>
+                <li key={player.id} className="flex justify-between items-center bg-transparent border border-white/10 p-2.5 rounded-lg px-4">
+                  <span className="text-white text-sm">{player.name}</span>
+                  <button onClick={() => removePlayer(idx, player.id)} className="text-red-500 hover:text-red-400 p-1 font-bold">✕</button>
                 </li>
               ))}
             </ul>
             <button 
               onClick={() => handleAddPlayerClick(idx)}
-              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm font-bold transition-colors"
+              className="w-full py-2.5 bg-white hover:bg-neutral-200 text-black rounded-lg text-sm font-bold transition-colors"
             >
               + Add Player
             </button>
@@ -92,14 +92,14 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
         ))}
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
-        <h2 className="text-xl font-bold">Match Settings</h2>
+      <div className="bg-transparent border border-white/10 rounded-2xl p-5 space-y-6">
+        <h2 className="text-xl font-bold text-white">Match Settings</h2>
         
         <div>
-          <label className="block text-sm font-medium text-slate-400 mb-2">Number of Overs</label>
+          <label className="block text-xs font-normal text-neutral-400 mb-2">Number of Overs</label>
           <input 
             type="number"
-            className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 outline-none focus:border-blue-500"
+            className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg p-3 outline-none focus:border-white text-white text-base transition-colors"
             value={maxOvers}
             onChange={(e) => setMaxOvers(Math.max(1, parseInt(e.target.value) || 1))}
           />
@@ -107,7 +107,7 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
 
         <button 
           onClick={handleStart}
-          className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-lg transition-colors shadow-lg shadow-blue-500/20"
+          className="w-full py-4 bg-white hover:bg-neutral-200 text-black rounded-xl font-bold text-base transition-colors"
         >
           Proceed to Toss
         </button>
@@ -115,13 +115,13 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
 
       {addingPlayerTeamIdx !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="bg-[#171717] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
             <h3 className="text-xl font-bold mb-4 text-white">Add Player to {teams[addingPlayerTeamIdx].name}</h3>
             <input 
               autoFocus
               type="text"
               placeholder="Player Name"
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 outline-none focus:border-blue-500 mb-6"
+              className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg p-3 outline-none focus:border-white text-white mb-6 transition-colors"
               value={newPlayerName}
               onChange={(e) => setNewPlayerName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && confirmAddPlayer()}
@@ -129,14 +129,14 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
             <div className="flex gap-3">
               <button 
                 onClick={cancelAddPlayer}
-                className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-all"
+                className="flex-1 py-3 bg-transparent border border-white/10 hover:bg-white/5 text-white rounded-xl font-bold transition-all"
               >
                 Cancel
               </button>
               <button 
                 onClick={confirmAddPlayer}
                 disabled={!newPlayerName.trim()}
-                className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20"
+                className="flex-1 py-3 bg-white hover:bg-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed text-black rounded-xl font-bold transition-all"
               >
                 Add
               </button>

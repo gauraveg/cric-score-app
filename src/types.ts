@@ -77,4 +77,13 @@ export interface MatchState {
   matchWinner?: string;
   firstInnings?: InningsState;
   undoHistory?: MatchHistoryState[];
+  pendingWicket?: {
+    outPlayerId: string;
+    bowlerId: string;
+    isRunOut?: boolean;
+    replaceTarget: 'strikerId' | 'nonStrikerId';
+    ballType: Ball['type'];
+    dismissalType?: 'bowled' | 'catch' | 'stump' | 'runout';
+    fielderId?: string;
+  };
 }

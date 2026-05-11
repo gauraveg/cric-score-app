@@ -8,71 +8,83 @@ interface HomeScreenProps {
 
 const HomeScreen: React.FC<HomeScreenProps> = ({ matches }) => {
   const matchList = Object.values(matches).sort((a, b) => {
-    // Basic sorting, maybe by ID or creation time if we had it
     return b.id.localeCompare(a.id);
   });
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Matches</h2>
-        <Link 
-          to="/setup" 
-          className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20"
-        >
-          New Match
-        </Link>
+      <div className="flex justify-between items-center gap-4">
+        <h2 className="text-3xl font-bold text-white">Matches</h2>
+        <div className="flex gap-3">
+          <Link 
+            to="/toss" 
+            state={{ isStandalone: true }}
+            className="px-4 py-3 bg-transparent border border-white/20 hover:bg-white/5 text-white rounded-xl text-sm font-bold transition-all"
+          >
+            Coin Flip
+          </Link>
+          <Link 
+            to="/setup" 
+            className="px-4 py-3 bg-white hover:bg-neutral-200 text-black rounded-xl text-sm font-bold transition-all shadow-[0_4px_12px_rgba(255,255,255,0.1)]"
+          >
+            New Match
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-4">
         {matchList.length === 0 ? (
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-12 text-center">
-            <p className="text-slate-500 mb-4">No matches found</p>
-            <Link to="/setup" className="text-blue-500 font-bold hover:underline">Create your first match</Link>
+          <div className="bg-[#171717] border border-white/10 rounded-2xl p-12 text-center">
+            <p className="text-neutral-500 mb-4">No matches found</p>
+            <Link to="/setup" className="text-white font-bold hover:underline">Create your first match</Link>
           </div>
         ) : (
           matchList.map((match) => (
-            <Link 
+            <div 
               key={match.id} 
-              to={`/match/${match.id}`}
-              className="bg-slate-900 border border-slate-800 rounded-xl p-6 hover:border-slate-600 transition-colors flex justify-between items-center"
+              className="bg-[#171717] border border-white/10 rounded-2xl p-5 hover:border-white/20 transition-colors flex flex-col gap-3 cursor-pointer"
+              onClick={() => window.location.href = `/match/${match.id}`}
             >
-              <div>
-                <div className="flex items-center gap-3 mb-1">
-                  <h3 className="font-bold text-lg">
-                    {match.teams[0]?.name} vs {match.teams[1]?.name}
-                  </h3>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                    match.matchWinner ? 'bg-slate-800 text-slate-400' : 'bg-green-900/30 text-green-400'
-                  }`}>
-                    {match.matchWinner ? 'Finished' : 'In Progress'}
-                  </span>
+              <div className="flex justify-between w-full">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-lg text-white">
+                      {match.teams[0]?.name} vs {match.teams[1]?.name}
+                    </h3>
+                  </div>
+                  <div className="flex items-center mt-1 mb-1">
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                      match.matchWinner ? 'bg-red-500/20 text-red-500' : 'bg-[#166534] text-[#4ade80]'
+                    }`}>
+                      {match.matchWinner ? 'ENDED' : 'IN PROGRESS'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-neutral-400">
+                    {match.maxOvers} Overs | Innings {match.currentInnings}
+                  </p>
+                  {match.matchWinner && (
+                    <p className="text-xs text-neutral-300 font-medium mt-1">{match.matchWinner}</p>
+                  )}
                 </div>
-                <p className="text-sm text-slate-500">
-                  {match.maxOvers} Overs | Innings {match.currentInnings}
-                </p>
-                {match.matchWinner && (
-                  <p className="text-xs text-blue-400 font-medium mt-2">{match.matchWinner}</p>
-                )}
-              </div>
-              <div className="text-right flex flex-col items-end gap-2">
-                <div>
-                  <p className="text-2xl font-black text-slate-300">
+                <div className="text-right flex flex-col items-end gap-1">
+                  <p className="text-2xl font-bold text-white">
                     {match.totalRuns} / {match.wickets}
                   </p>
-                  <p className="text-xs text-slate-500 font-bold uppercase">
-                    {Math.floor(match.totalBalls / 6)}.{match.totalBalls % 6} Overs
+                  <p className="text-[10px] text-neutral-400 font-normal uppercase">
+                    {Math.floor(match.totalBalls / 6)}.{match.totalBalls % 6} OVERS
                   </p>
                 </div>
+              </div>
+              <div className="flex justify-end w-full mt-1">
                 <Link 
                   to={`/scorecard/${match.id}`}
                   onClick={(e) => e.stopPropagation()} // Prevent navigating to /match/:id
-                  className="text-xs text-blue-400 hover:text-blue-300 font-bold uppercase tracking-wider"
+                  className="text-[10px] text-white border border-white hover:bg-white/10 px-3 py-1.5 rounded-lg font-bold uppercase tracking-wider"
                 >
-                  Scorecard
+                  SCORECARD
                 </Link>
               </div>
-            </Link>
+            </div>
           ))
         )}
       </div>

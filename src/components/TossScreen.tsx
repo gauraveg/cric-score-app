@@ -9,7 +9,9 @@ interface TossScreenProps {
 const TossScreen: React.FC<TossScreenProps> = ({ onCreateMatch }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const state = location.state as { teams: Team[]; maxOvers: number } | null;
+  const state = location.state as { teams: Team[]; maxOvers: number; isStandalone?: boolean } | null;
+
+  const isStandalone = state?.isStandalone || false;
 
   const [tossState, setTossState] = useState<'pending' | 'flipping' | 'result' | 'lineup'>('pending');
   const [tossWinnerId, setTossWinnerId] = useState<string | null>(null);
@@ -20,17 +22,22 @@ const TossScreen: React.FC<TossScreenProps> = ({ onCreateMatch }) => {
   const [nonStrikerId, setNonStrikerId] = useState('');
   const [currentBowlerId, setCurrentBowlerId] = useState('');
 
-  if (!state || !state.teams) {
+  if (!state || (!state.teams && !isStandalone)) {
     navigate('/setup');
     return null;
   }
 
-  const { teams, maxOvers } = state;
+  const teams = isStandalone 
+    ? [{ id: 'h', name: 'Heads', players: [] }, { id: 't', name: 'Tails', players: [] }] 
+    : state.teams;
+    
+  const maxOvers = state.maxOvers || 5;
   const team1 = teams[0];
   const team2 = teams[1];
 
   const handleFlip = () => {
     setTossState('flipping');
+    setTossWinnerId(null);
     
     // Randomize winner
     setTimeout(() => {
@@ -46,6 +53,7 @@ const TossScreen: React.FC<TossScreenProps> = ({ onCreateMatch }) => {
   };
 
   const handleStartMatch = () => {
+    if (isStandalone) return;
     if (!strikerId || !nonStrikerId || !currentBowlerId) {
       alert('Please select opening batters and bowler.');
       return;
@@ -101,26 +109,26 @@ const TossScreen: React.FC<TossScreenProps> = ({ onCreateMatch }) => {
   const bowlingTeam = teams.find(t => t.id !== battingTeam?.id);
 
   return (
-    <div className="min-h-[80vh] flex flex-col items-center justify-center p-4 max-w-md mx-auto animate-in fade-in duration-500">
-      <h2 className="text-3xl font-black mb-12 text-center">Match Toss</h2>
+    <div className="min-h-[80vh] flex flex-col items-center pt-20 p-4 max-w-md mx-auto animate-in fade-in duration-500">
+      <h2 className="text-3xl font-black mb-12 text-center text-white">
+        {isStandalone ? 'Coin Flip' : 'Match Toss'}
+      </h2>
 
       {tossState === 'pending' || tossState === 'flipping' ? (
         <div className="flex flex-col items-center w-full">
           <div className="flex justify-between items-center w-full mb-16 px-4">
-            <div className="text-xl font-bold text-blue-400 text-center flex-1">{team1.name}</div>
-            <div className="text-slate-500 font-black px-4">VS</div>
-            <div className="text-xl font-bold text-blue-400 text-center flex-1">{team2.name}</div>
+            <div className="text-xl font-bold text-white text-center flex-1">{team1.name}</div>
+            <div className="text-neutral-500 font-normal text-sm px-4">vs</div>
+            <div className="text-xl font-bold text-white text-center flex-1">{team2.name}</div>
           </div>
 
-          <div className="relative w-40 h-40 mb-16 perspective-1000">
+          <div className="relative w-32 h-32 mb-16 perspective-1000">
             <div className={`w-full h-full rounded-full transform-style-3d ${tossState === 'flipping' ? (tossWinnerId === team1.id ? 'animate-flip-heads' : 'animate-flip-tails') : ''}`}>
               {/* Heads side */}
-              <div className="absolute w-full h-full bg-yellow-500 rounded-full flex items-center justify-center border-8 border-yellow-600 backface-hidden shadow-2xl">
-                <span className="text-yellow-900 font-black text-2xl">COIN</span>
+              <div className="absolute w-full h-full bg-[#f59e0b] rounded-full flex items-center justify-center border-4 border-[#b45309] backface-hidden shadow-2xl">
               </div>
               {/* Tails side */}
-              <div className="absolute w-full h-full bg-yellow-500 rounded-full flex items-center justify-center border-8 border-yellow-600 backface-hidden shadow-2xl rotate-y-180">
-                <span className="text-yellow-900 font-black text-2xl">COIN</span>
+              <div className="absolute w-full h-full bg-[#f59e0b] rounded-full flex items-center justify-center border-4 border-[#b45309] backface-hidden shadow-2xl rotate-y-180">
               </div>
             </div>
           </div>
@@ -128,50 +136,67 @@ const TossScreen: React.FC<TossScreenProps> = ({ onCreateMatch }) => {
           <button
             onClick={handleFlip}
             disabled={tossState === 'flipping'}
-            className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-500/20 transition-all"
+            className="w-full py-4 bg-white hover:bg-neutral-200 disabled:opacity-50 text-black rounded-xl font-bold text-base transition-all"
           >
             {tossState === 'flipping' ? 'Flipping...' : 'Flip Coin'}
           </button>
         </div>
       ) : tossState === 'result' ? (
         <div className="flex flex-col items-center w-full space-y-8 animate-in zoom-in-95">
-          <div className="w-32 h-32 bg-green-500 rounded-full flex items-center justify-center border-8 border-green-600 shadow-2xl mb-4">
+          <div className="w-32 h-32 bg-green-500 rounded-full flex items-center justify-center border-4 border-green-600 shadow-2xl mb-4">
             <span className="text-green-900 font-black text-6xl">✓</span>
           </div>
           
           <h3 className="text-3xl font-black text-center">
-            <span className="text-green-400">{teams.find(t => t.id === tossWinnerId)?.name}</span> won the toss!
+            <span className="text-white">{teams.find(t => t.id === tossWinnerId)?.name}</span> won!
           </h3>
           
-          <div className="w-full space-y-4">
-            <p className="text-center text-slate-400 font-bold mb-2">What will they do first?</p>
-            <div className="flex gap-4">
+          {isStandalone ? (
+            <div className="w-full space-y-4">
               <button 
-                onClick={() => handleDecision('bat')}
-                className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white border-2 border-slate-600 hover:border-blue-500 rounded-xl font-black text-xl transition-all"
+                onClick={() => setTossState('pending')}
+                className="w-full py-4 bg-white hover:bg-neutral-200 text-black rounded-xl font-bold text-base transition-all"
               >
-                BAT
+                Flip Again
               </button>
               <button 
-                onClick={() => handleDecision('bowl')}
-                className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white border-2 border-slate-600 hover:border-blue-500 rounded-xl font-black text-xl transition-all"
+                onClick={() => navigate('/home')}
+                className="w-full py-4 bg-transparent border border-white/20 hover:bg-white/5 text-white rounded-xl font-bold text-base transition-all"
               >
-                BOWL
+                Back to Home
               </button>
             </div>
-          </div>
+          ) : (
+            <div className="w-full space-y-4">
+              <p className="text-center text-neutral-400 font-bold mb-2">What will they do first?</p>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => handleDecision('bat')}
+                  className="flex-1 py-4 bg-transparent text-white border border-white/20 hover:border-white rounded-xl font-black text-xl transition-all"
+                >
+                  BAT
+                </button>
+                <button 
+                  onClick={() => handleDecision('bowl')}
+                  className="flex-1 py-4 bg-transparent text-white border border-white/20 hover:border-white rounded-xl font-black text-xl transition-all"
+                >
+                  BOWL
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
-        <div className="w-full bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6 animate-in slide-in-from-bottom-4">
+        <div className="w-full bg-[#171717] border border-white/10 rounded-2xl p-6 space-y-6 animate-in slide-in-from-bottom-4">
           <div className="text-center mb-6">
-            <h3 className="text-xl font-bold text-blue-400">{battingTeam?.name} will Bat First</h3>
+            <h3 className="text-xl font-bold text-white">{battingTeam?.name} will Bat First</h3>
           </div>
 
           <div className="space-y-4">
             <div>
-              <label className="text-xs text-slate-500 font-bold uppercase mb-1 block">Opening Striker</label>
+              <label className="text-xs text-neutral-400 font-bold uppercase mb-1 block">Opening Striker</label>
               <select 
-                className="w-full bg-slate-800 p-3 rounded-lg border border-slate-700 outline-none focus:border-blue-500"
+                className="w-full bg-[#1a1a1a] p-3 rounded-lg border border-white/10 outline-none focus:border-white text-white"
                 value={strikerId}
                 onChange={(e) => setStrikerId(e.target.value)}
               >
@@ -180,9 +205,9 @@ const TossScreen: React.FC<TossScreenProps> = ({ onCreateMatch }) => {
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-500 font-bold uppercase mb-1 block">Opening Non-Striker</label>
+              <label className="text-xs text-neutral-400 font-bold uppercase mb-1 block">Opening Non-Striker</label>
               <select 
-                className="w-full bg-slate-800 p-3 rounded-lg border border-slate-700 outline-none focus:border-blue-500"
+                className="w-full bg-[#1a1a1a] p-3 rounded-lg border border-white/10 outline-none focus:border-white text-white"
                 value={nonStrikerId}
                 onChange={(e) => setNonStrikerId(e.target.value)}
               >
@@ -191,9 +216,9 @@ const TossScreen: React.FC<TossScreenProps> = ({ onCreateMatch }) => {
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-500 font-bold uppercase mb-1 block">Opening Bowler</label>
+              <label className="text-xs text-neutral-400 font-bold uppercase mb-1 block">Opening Bowler</label>
               <select 
-                className="w-full bg-slate-800 p-3 rounded-lg border border-slate-700 outline-none focus:border-blue-500"
+                className="w-full bg-[#1a1a1a] p-3 rounded-lg border border-white/10 outline-none focus:border-white text-white"
                 value={currentBowlerId}
                 onChange={(e) => setCurrentBowlerId(e.target.value)}
               >
@@ -206,7 +231,7 @@ const TossScreen: React.FC<TossScreenProps> = ({ onCreateMatch }) => {
           <button 
             onClick={handleStartMatch}
             disabled={!strikerId || !nonStrikerId || !currentBowlerId || strikerId === nonStrikerId}
-            className="w-full py-4 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded-xl font-bold text-lg shadow-lg shadow-green-500/20 transition-all mt-4"
+            className="w-full py-4 bg-white hover:bg-neutral-200 disabled:opacity-50 text-black rounded-xl font-bold text-lg transition-all mt-4"
           >
             Start Match!
           </button>

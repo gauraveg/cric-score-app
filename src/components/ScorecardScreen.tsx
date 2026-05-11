@@ -12,7 +12,7 @@ const ScorecardScreen: React.FC<ScorecardScreenProps> = ({ matches }) => {
   const [activeTab, setActiveTab] = useState<1 | 2>(1);
 
   if (!match) {
-    return <div className="text-center p-12 text-slate-400">Match not found.</div>;
+    return <div className="text-center p-12 text-neutral-400">Match not found.</div>;
   }
 
   // Determine data based on selected innings
@@ -45,16 +45,16 @@ const ScorecardScreen: React.FC<ScorecardScreenProps> = ({ matches }) => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12">
-      <div className="flex gap-4 border-b border-slate-800 pb-4">
+      <div className="flex gap-4 border-b border-white/10 pb-4">
         <button 
-          className={`px-4 py-2 font-bold rounded-lg transition-colors ${activeTab === 1 ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+          className={`px-4 py-2 font-bold rounded-lg transition-colors ${activeTab === 1 ? 'bg-white text-black' : 'bg-transparent border border-white/10 text-neutral-400 hover:bg-white/5'}`}
           onClick={() => setActiveTab(1)}
         >
           {match.teams.find(t => t.id === (match.firstInnings ? match.firstInnings.battingTeamId : match.battingTeamId))?.name} (1st Inn)
         </button>
         {hasSecondInnings && (
           <button 
-            className={`px-4 py-2 font-bold rounded-lg transition-colors ${activeTab === 2 ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+            className={`px-4 py-2 font-bold rounded-lg transition-colors ${activeTab === 2 ? 'bg-white text-black' : 'bg-transparent border border-white/10 text-neutral-400 hover:bg-white/5'}`}
             onClick={() => setActiveTab(2)}
           >
             {match.teams.find(t => t.id === match.battingTeamId)?.name} (2nd Inn)
@@ -62,8 +62,8 @@ const ScorecardScreen: React.FC<ScorecardScreenProps> = ({ matches }) => {
         )}
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-        <div className="bg-emerald-700/20 text-emerald-400 px-4 py-3 flex justify-between font-bold">
+      <div className="bg-[#171717] border border-white/10 rounded-xl overflow-hidden">
+        <div className="bg-[#064e3b] text-[#34d399] px-4 py-4 flex justify-between font-bold">
           <span>{battingTeam.name}</span>
           <span>{inningsData.totalRuns}-{inningsData.wickets} ({formatOvers(inningsData.totalBalls)} Ov)</span>
         </div>
@@ -71,10 +71,9 @@ const ScorecardScreen: React.FC<ScorecardScreenProps> = ({ matches }) => {
         {/* Batting Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left whitespace-nowrap">
-            <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
+            <thead className="bg-white/5 text-neutral-400 text-xs uppercase tracking-wider border-b border-white/10">
               <tr>
                 <th className="px-4 py-3 font-medium">Batter</th>
-                <th className="px-4 py-3 font-medium"></th>
                 <th className="px-4 py-3 text-right font-medium">R</th>
                 <th className="px-4 py-3 text-right font-medium">B</th>
                 <th className="px-4 py-3 text-right font-medium">4s</th>
@@ -82,36 +81,38 @@ const ScorecardScreen: React.FC<ScorecardScreenProps> = ({ matches }) => {
                 <th className="px-4 py-3 text-right font-medium">SR</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-white/10">
               {getBatsmen().map(p => {
                 const s = match.stats[p.id] || { runs: 0, ballsFaced: 0, fours: 0, sixes: 0, isOut: false, dismissalText: '' };
                 const sr = s.ballsFaced > 0 ? ((s.runs / s.ballsFaced) * 100).toFixed(2) : '0.00';
                 return (
-                  <tr key={p.id} className="hover:bg-slate-800/30">
-                    <td className="px-4 py-4 font-bold text-blue-400">{p.name}</td>
-                    <td className="px-4 py-4 text-sm text-slate-400">{s.isOut ? s.dismissalText : 'not out'}</td>
-                    <td className="px-4 py-4 text-right font-bold">{s.runs}</td>
-                    <td className="px-4 py-4 text-right text-slate-300">{s.ballsFaced}</td>
-                    <td className="px-4 py-4 text-right text-slate-400">{s.fours}</td>
-                    <td className="px-4 py-4 text-right text-slate-400">{s.sixes}</td>
-                    <td className="px-4 py-4 text-right text-slate-400">{sr}</td>
+                  <tr key={p.id} className="hover:bg-white/5">
+                    <td className="px-4 py-4">
+                      <div className="font-bold text-white">{p.name}</div>
+                      <div className="text-xs text-neutral-400">{s.isOut ? s.dismissalText : 'not out'}</div>
+                    </td>
+                    <td className="px-4 py-4 text-right font-bold text-white">{s.runs}</td>
+                    <td className="px-4 py-4 text-right text-neutral-400">{s.ballsFaced}</td>
+                    <td className="px-4 py-4 text-right text-neutral-400">{s.fours}</td>
+                    <td className="px-4 py-4 text-right text-neutral-400">{s.sixes}</td>
+                    <td className="px-4 py-4 text-right text-neutral-400">{sr}</td>
                   </tr>
                 );
               })}
               
               {/* Extras Row */}
-              <tr className="bg-slate-800/20">
-                <td className="px-4 py-4 font-bold">Extras</td>
-                <td colSpan={6} className="px-4 py-4 text-right font-bold">
-                  {totalExtras} <span className="text-slate-400 font-normal text-sm">(b {inningsData.extras.byes}, lb {inningsData.extras.legByes}, w {inningsData.extras.wides}, nb {inningsData.extras.noBalls})</span>
+              <tr className="bg-transparent border-t border-white/10">
+                <td className="px-4 py-4 font-bold text-white">Extras</td>
+                <td colSpan={5} className="px-4 py-4 text-right font-bold text-white">
+                  {totalExtras} <span className="text-neutral-400 font-normal text-sm">(b {inningsData.extras.byes}, lb {inningsData.extras.legByes}, w {inningsData.extras.wides}, nb {inningsData.extras.noBalls})</span>
                 </td>
               </tr>
               
               {/* Total Row */}
-              <tr className="bg-slate-800/50">
-                <td className="px-4 py-4 font-bold">Total</td>
-                <td colSpan={6} className="px-4 py-4 text-right font-bold">
-                  {inningsData.totalRuns} <span className="text-slate-400 font-normal text-sm">({inningsData.wickets} wkts, {formatOvers(inningsData.totalBalls)} Ov, RR: {calculateCRR(inningsData.totalRuns, inningsData.totalBalls)})</span>
+              <tr className="bg-white/5 border-t border-white/10">
+                <td className="px-4 py-4 font-bold text-white">Total</td>
+                <td colSpan={5} className="px-4 py-4 text-right font-bold text-white">
+                  {inningsData.totalRuns} <span className="text-neutral-400 font-normal text-sm">({inningsData.wickets} wkts, {formatOvers(inningsData.totalBalls)} Ov, RR: {calculateCRR(inningsData.totalRuns, inningsData.totalBalls)})</span>
                 </td>
               </tr>
             </tbody>
@@ -120,41 +121,37 @@ const ScorecardScreen: React.FC<ScorecardScreenProps> = ({ matches }) => {
 
         {/* Did Not Bat */}
         {getDidNotBat().length > 0 && (
-          <div className="px-4 py-4 border-t border-slate-800 flex gap-4 items-center">
-            <span className="font-bold text-sm">Did not Bat</span>
-            <span className="text-sm text-blue-400">{getDidNotBat().map(p => p.name).join(', ')}</span>
+          <div className="px-4 py-4 border-t border-white/10 flex gap-4 items-center">
+            <span className="font-bold text-sm text-white">Did not Bat</span>
+            <span className="text-sm text-neutral-400">{getDidNotBat().map(p => p.name).join(', ')}</span>
           </div>
         )}
 
         {/* Bowling Table */}
-        <div className="overflow-x-auto border-t-4 border-slate-950">
+        <div className="overflow-x-auto border-t border-white/20">
           <table className="w-full text-left whitespace-nowrap">
-            <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
+            <thead className="bg-white/5 text-neutral-400 text-xs uppercase tracking-wider border-b border-white/10">
               <tr>
                 <th className="px-4 py-3 font-medium">Bowler</th>
                 <th className="px-4 py-3 text-right font-medium">O</th>
                 <th className="px-4 py-3 text-right font-medium">M</th>
                 <th className="px-4 py-3 text-right font-medium">R</th>
                 <th className="px-4 py-3 text-right font-medium">W</th>
-                <th className="px-4 py-3 text-right font-medium">NB</th>
-                <th className="px-4 py-3 text-right font-medium">WD</th>
                 <th className="px-4 py-3 text-right font-medium">ECO</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-white/10">
               {getBowlers().map(p => {
                 const b = match.stats[p.id];
                 const eco = b.ballsBowled > 0 ? ((b.runsConceded / b.ballsBowled) * 6).toFixed(2) : '0.00';
                 return (
-                  <tr key={p.id} className="hover:bg-slate-800/30">
-                    <td className="px-4 py-4 font-bold text-blue-400">{p.name}</td>
-                    <td className="px-4 py-4 text-right text-slate-300">{formatOvers(b.ballsBowled)}</td>
-                    <td className="px-4 py-4 text-right text-slate-400">{b.maidens}</td>
-                    <td className="px-4 py-4 text-right text-slate-300">{b.runsConceded}</td>
+                  <tr key={p.id} className="hover:bg-white/5">
+                    <td className="px-4 py-4 font-bold text-white">{p.name}</td>
+                    <td className="px-4 py-4 text-right text-neutral-400">{formatOvers(b.ballsBowled)}</td>
+                    <td className="px-4 py-4 text-right text-neutral-400">{b.maidens}</td>
+                    <td className="px-4 py-4 text-right text-neutral-400">{b.runsConceded}</td>
                     <td className="px-4 py-4 text-right font-bold text-white">{b.wickets}</td>
-                    <td className="px-4 py-4 text-right text-slate-400">{b.noBallsBowled || 0}</td>
-                    <td className="px-4 py-4 text-right text-slate-400">{b.widesBowled || 0}</td>
-                    <td className="px-4 py-4 text-right text-slate-400">{eco}</td>
+                    <td className="px-4 py-4 text-right text-neutral-400">{eco}</td>
                   </tr>
                 );
               })}
@@ -165,7 +162,7 @@ const ScorecardScreen: React.FC<ScorecardScreenProps> = ({ matches }) => {
       
       <Link 
         to={`/match/${match.id}`}
-        className="block w-full py-4 text-center bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-all mt-6"
+        className="block w-full py-4 text-center bg-[#222222] hover:bg-[#333333] text-white rounded-xl font-bold transition-all mt-6"
       >
         Back to Dashboard
       </Link>

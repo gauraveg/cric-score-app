@@ -1,5 +1,31 @@
 @import "tailwindcss";
 
+@theme {
+  --color-white: #e3e1e1;
+  --color-red-50: #ff6669;
+  --color-red-100: #ff6669;
+  --color-red-200: #ff6669;
+  --color-red-300: #ff6669;
+  --color-red-400: #ff6669;
+  --color-red-500: #ff6669;
+  --color-red-600: #ff6669;
+  --color-red-700: #ff6669;
+  --color-red-800: #ff6669;
+  --color-red-900: #ff6669;
+  --color-red-950: #ff6669;
+  --color-orange-50: #f57f3b;
+  --color-orange-100: #f57f3b;
+  --color-orange-200: #f57f3b;
+  --color-orange-300: #f57f3b;
+  --color-orange-400: #f57f3b;
+  --color-orange-500: #f57f3b;
+  --color-orange-600: #f57f3b;
+  --color-orange-700: #f57f3b;
+  --color-orange-800: #f57f3b;
+  --color-orange-900: #f57f3b;
+  --color-orange-950: #f57f3b;
+}
+
 @layer utilities {
   .perspective-1000 {
     perspective: 1000px;

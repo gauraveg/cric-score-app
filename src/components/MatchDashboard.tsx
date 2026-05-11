@@ -7,12 +7,19 @@ interface MatchDashboardProps {
 }
 
 type PendingAction = {
-  type: 'selectBatter' | 'selectBowler' | 'nextOver' | 'inningsTransition' | 'noBallRuns' | 'retireConfirmation' | 'runOut' | 'editTeams' | 'editOvers';
-  step?: 'confirm' | 'select' | 'team1' | 'team2';
+  type: 'selectBatter' | 'selectBowler' | 'nextOver' | 'inningsTransition' | 'noBallRuns' | 'retireConfirmation' | 'runOut' | 'editTeams' | 'editOvers' | 'wicketType';
+  step?: 'confirm' | 'select' | 'team1' | 'team2' | 'selectType' | 'selectFielder';
   message: string;
   replaceTarget?: 'strikerId' | 'nonStrikerId';
   isAutoTriggered?: boolean;
   batterId?: string;
+  dismissalType?: 'bowled' | 'catch' | 'stump' | 'runout';
+  pendingWicket?: { 
+    outPlayerId: string; 
+    bowlerId: string; 
+    ballType: Ball['type'];
+    isRunOut?: boolean;
+  };
 } | null;
 
 const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchState }) => {
@@ -60,7 +67,14 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
     return ((runsNeeded / ballsRemaining) * 6).toFixed(2);
   };
 
-  const updateMatch = (ballType: Ball['type'], runs: number, extraRuns: number = 0, isWicket: boolean = false, ignorePending = false) => {
+  const updateMatch = (
+    ballType: Ball['type'], 
+    runs: number, 
+    extraRuns: number = 0, 
+    isWicket: boolean = false, 
+    ignorePending = false,
+    wicketInfo?: { dismissalType?: 'bowled' | 'catch' | 'stump' | 'runout', fielderId?: string }
+  ) => {
     if (matchWinner || (!ignorePending && pendingAction)) return;
 
     let nextPending: PendingAction = null;
@@ -98,13 +112,30 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
       if (isLegal) bowlerStats.ballsBowled += 1;
       if (ballType === 'wide') bowlerStats.widesBowled = (bowlerStats.widesBowled || 0) + extraRuns;
       if (ballType === 'noball') bowlerStats.noBallsBowled = (bowlerStats.noBallsBowled || 0) + 1;
+      const isAllOutCalculated = prev.wickets + 1 >= battingTeam.players.length;
       if (isWicket) {
-        bowlerStats.wickets += 1;
-        newState.wickets += 1;
-        const strikerStats = { ...newStats[prev.strikerId] };
-        strikerStats.isOut = true;
-        strikerStats.dismissalText = `b ${bowlingTeam.players.find(p => p.id === prev.currentBowlerId)?.name}`;
-        newStats[prev.strikerId] = strikerStats;
+        if (isAllOutCalculated) {
+           bowlerStats.wickets += 1;
+           newState.wickets += 1;
+           const strikerStats = { ...newStats[prev.strikerId] };
+           strikerStats.isOut = true;
+           
+           const bowlerName = bowlingTeam.players.find(p => p.id === prev.currentBowlerId)?.name;
+           const fielderName = wicketInfo?.fielderId ? bowlingTeam.players.find(p => p.id === wicketInfo.fielderId)?.name : '';
+           
+           if (wicketInfo?.dismissalType === 'catch') {
+               strikerStats.dismissalText = `c ${fielderName} b ${bowlerName}`;
+           } else if (wicketInfo?.dismissalType === 'stump') {
+               strikerStats.dismissalText = `st ${fielderName} b ${bowlerName}`;
+           } else {
+               strikerStats.dismissalText = `b ${bowlerName}`;
+           }
+
+           newStats[prev.strikerId] = strikerStats;
+        } else {
+           // Defer wicket tally increment until next batter selected
+           // Still record runs conceded etc in bowlerStats
+        }
       }
       newStats[prev.currentBowlerId] = bowlerStats;
 
@@ -127,25 +158,29 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
         newState.nonStrikerId = temp;
       }
 
-      const isAllOut = newState.wickets >= battingTeam.players.length;
+      const isAllOut = isAllOutCalculated;
       const isOversFinished = newState.totalBalls >= maxOvers * 6;
       
       const isTargetReached = newState.currentInnings === 2 && newState.totalRuns >= targetScore!;
 
       if (isWicket && !isAllOut) {
-        const remainingPlayers = battingTeam.players.filter(p => 
-          p.id !== newState.strikerId && 
-          p.id !== newState.nonStrikerId &&
-          !newState.ballLog.some(b => b.isWicket && b.strikerId === p.id)
-        );
+        const replaceTarget = 'strikerId'; // Conventional wicket is always striker
+        newState.pendingWicket = {
+           outPlayerId: prev.strikerId,
+           bowlerId: prev.currentBowlerId,
+           ballType: ballType,
+           replaceTarget,
+           dismissalType: wicketInfo?.dismissalType,
+           fielderId: wicketInfo?.fielderId
+        };
+        newState[replaceTarget] = ''; // Clear the slot to trigger selection UI
 
-        if (remainingPlayers.length === 0) {
-          // Last man batting alone
-          newState.strikerId = newState.nonStrikerId;
-          newState.nonStrikerId = '';
-        } else {
-          nextPending = { type: 'selectBatter', message: 'Wicket! Select next batter', isAutoTriggered: true };
-        }
+        nextPending = { 
+          type: 'selectBatter', 
+          message: 'Wicket! Select next batter', 
+          isAutoTriggered: true,
+          replaceTarget
+        };
       }
 
       if (newState.currentInnings === 1 && (isAllOut || isOversFinished)) {
@@ -173,10 +208,54 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
   };
 
   const selectNextBatter = (playerId: string) => {
-    setMatchState(prev => ({ 
-      ...prev, 
-      [pendingAction?.replaceTarget || 'strikerId']: playerId 
-    }));
+    setMatchState(prev => {
+      const newState = { ...prev };
+      if (prev.pendingWicket) {
+        const { outPlayerId, bowlerId, isRunOut, dismissalType, fielderId } = prev.pendingWicket;
+        const newStats = { ...prev.stats };
+        
+        let dismissalText: string;
+        if (isRunOut) {
+          dismissalText = 'run out';
+        } else {
+          const bowlerName = prev.teams.flatMap(t => t.players).find(p => p.id === bowlerId)?.name;
+          const fielderName = fielderId ? prev.teams.flatMap(t => t.players).find(p => p.id === fielderId)?.name : '';
+          
+          if (dismissalType === 'catch') {
+            dismissalText = `c ${fielderName} b ${bowlerName}`;
+          } else if (dismissalType === 'stump') {
+            dismissalText = `st ${fielderName} b ${bowlerName}`;
+          } else {
+            dismissalText = `b ${bowlerName}`;
+          }
+        }
+
+        // Finalize batter state
+        newStats[outPlayerId] = {
+          ...newStats[outPlayerId],
+          isOut: true,
+          dismissalText
+        };
+        
+        // Finalize team wicket tally
+        newState.wickets += 1;
+        
+        // Finalize bowler state
+        if (!isRunOut && bowlerId && newStats[bowlerId]) {
+          newStats[bowlerId] = {
+            ...newStats[bowlerId],
+            wickets: (newStats[bowlerId].wickets || 0) + 1
+          };
+        }
+        
+        newState.stats = newStats;
+        newState.pendingWicket = undefined; // Clear deferred state
+      }
+      
+      const target = pendingAction?.replaceTarget || prev.pendingWicket?.replaceTarget || 'strikerId';
+      newState[target] = playerId;
+      return newState;
+    });
     setPendingAction(null);
   };
 
@@ -382,10 +461,15 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
 
       const newStats = { ...prev.stats };
       
-      const batterStats = { ...newStats[playerId] };
-      batterStats.isOut = true;
-      batterStats.dismissalText = 'run out';
-      newStats[playerId] = batterStats;
+      const isAllOutCalculated = prev.wickets + 1 >= battingTeam.players.length;
+      
+      if (isAllOutCalculated) {
+          const batterStats = { ...newStats[playerId] };
+          batterStats.isOut = true;
+          batterStats.dismissalText = 'run out';
+          newStats[playerId] = batterStats;
+          newState.wickets += 1;
+      }
 
       if (prev.currentBowlerId && newStats[prev.currentBowlerId]) {
         const bowlerStats = { ...newStats[prev.currentBowlerId] };
@@ -394,10 +478,6 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
       }
 
       newState.stats = newStats;
-
-      newState.wickets += 1;
-
-      const isAllOut = newState.wickets >= battingTeam.players.length;
 
       const newBall: Ball = {
         type: 'legal',
@@ -413,11 +493,22 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
       newState.ballLog = [newBall, ...prev.ballLog];
 
       let nextPending: PendingAction = null;
+      const isAllOut = isAllOutCalculated;
       if (!isAllOut) {
+        const replaceTarget = playerId === prev.strikerId ? 'strikerId' : 'nonStrikerId';
+        newState.pendingWicket = {
+          outPlayerId: playerId,
+          bowlerId: prev.currentBowlerId,
+          ballType: 'legal',
+          isRunOut: true,
+          replaceTarget
+        };
+        newState[replaceTarget] = ''; // Clear the slot to trigger selection UI
+
         nextPending = { 
           type: 'selectBatter', 
           message: 'Run Out! Select next batter',
-          replaceTarget: playerId === prev.strikerId ? 'strikerId' : 'nonStrikerId',
+          replaceTarget,
           isAutoTriggered: true
         };
       } else if (newState.currentInnings === 1) {
@@ -466,286 +557,219 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
   const [setupNonStriker, setSetupNonStriker] = useState('');
   const [setupBowler, setSetupBowler] = useState('');
 
+  const getRunColor = (runs: number) => {
+    switch (runs) {
+      case 0: return 'bg-green-50 hover:bg-green-100';
+      case 1: return 'bg-green-100 hover:bg-green-200';
+      case 2: return 'bg-green-200 hover:bg-green-300';
+      case 3: return 'bg-green-300 hover:bg-green-400';
+      case 4: return 'bg-green-400 hover:bg-green-500';
+      case 6: return 'bg-green-500 hover:bg-green-600';
+      default: return 'bg-white hover:bg-neutral-200';
+    }
+  };
+
+  const getExtraRunColor = (runs: number) => {
+    switch (runs) {
+      case 0: return 'bg-orange-500/40 hover:bg-orange-500/60 transition-colors';
+      case 1: return 'bg-orange-500/50 hover:bg-orange-500/70 transition-colors';
+      case 2: return 'bg-orange-500/60 hover:bg-orange-500/80 transition-colors';
+      case 3: return 'bg-orange-500/70 hover:bg-orange-500/90 transition-colors';
+      case 4: return 'bg-orange-500/80 hover:bg-orange-500 transition-colors';
+      case 6: return 'bg-orange-500 transition-colors';
+      default: return 'bg-white hover:bg-neutral-200 transition-colors';
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 pb-12 relative">
       {/* Score Header */}
-      <div className={`rounded-2xl p-6 text-white shadow-xl transition-colors duration-500 ${
-        matchWinner ? 'bg-slate-800' : 'bg-blue-600 shadow-blue-500/20'
-      }`}>
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <p className="text-blue-100 text-sm font-medium mb-1">
-              {battingTeam.name} Innings ({currentInnings === 1 ? '1st' : '2nd'})
-            </p>
-            <h2 className="text-5xl font-black">
-              {totalRuns} / {wickets}
-            </h2>
-          </div>
-          <div className="text-right flex flex-col items-end gap-2">
-            <div>
-              <p className="text-3xl font-bold">{formatOvers(totalBalls)}</p>
-              <p className="text-blue-100 text-sm font-medium uppercase tracking-wider">Overs / {maxOvers}</p>
-            </div>
-            {!matchWinner && (
-              <div className="flex flex-col gap-1 mt-1">
-                <button onClick={handleEditTeams} className="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded font-bold uppercase tracking-wider w-full">Edit Teams</button>
-                <button onClick={handleEditOvers} className="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded font-bold uppercase tracking-wider w-full">Edit Overs</button>
-              </div>
-            )}
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-blue-400/30">
-          <div>
-            <p className="text-[10px] text-blue-200 font-bold uppercase">CRR</p>
-            <p className="text-xl font-bold">{calculateCRR()}</p>
-          </div>
+      <div className="flex flex-col items-center w-full mb-8">
+        <h2 className="text-[56px] font-bold text-white mb-2 leading-none">{totalRuns} / {wickets}</h2>
+        <p className="text-[18px] text-neutral-400 mb-6">{formatOvers(totalBalls)} Overs</p>
+        <div className="flex gap-6 w-full px-3 justify-center text-xs">
+          <span className="text-white font-normal">CRR: {calculateCRR()}</span>
           {currentInnings === 2 && targetScore && (
             <>
-              <div>
-                <p className="text-[10px] text-blue-200 font-bold uppercase">Target</p>
-                <p className="text-xl font-bold">{targetScore}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-blue-200 font-bold uppercase">RRR</p>
-                <p className="text-xl font-bold">{calculateRRR()}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-blue-200 font-bold uppercase">Need</p>
-                <p className="text-xl font-bold">{targetScore - totalRuns} off {(maxOvers * 6) - totalBalls}</p>
-              </div>
+              <span className="text-white font-normal">RRR: {calculateRRR()}</span>
+              <span className="text-white font-normal">Target: {targetScore}</span>
             </>
           )}
         </div>
-
+        {currentInnings === 2 && targetScore && !matchWinner && (
+           <div className="mt-4 bg-[#171717] px-4 py-3 rounded-2xl text-white font-bold text-sm text-center inline-block w-fit">
+              Need {targetScore - totalRuns} runs off {(maxOvers * 6) - totalBalls} balls
+           </div>
+        )}
         {matchWinner && (
-          <div className="mt-6 p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-xl text-center">
-            <p className="text-yellow-400 font-black text-xl uppercase tracking-widest">{matchWinner}</p>
+          <div className="mt-6 w-full p-4 bg-white text-black rounded-xl text-center">
+            <p className="font-black text-xl uppercase tracking-widest">{matchWinner}</p>
           </div>
         )}
       </div>
 
-      <div className="flex flex-col lg:grid lg:grid-cols-3 gap-6">
-        <div className="order-2 lg:order-1 lg:col-span-2 space-y-6">
-          {/* Batting Stats */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-            <div className="flex justify-between items-center px-4 py-3 bg-slate-800/50">
-              <span className="text-xs uppercase tracking-wider text-slate-400 font-bold">Batters</span>
-              {!matchWinner && !pendingAction && nonStrikerId && (
-                <button onClick={manualSwapStrike} className="text-xs text-blue-400 font-bold hover:text-blue-300">SWAP STRIKE 🔄</button>
-              )}
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left whitespace-nowrap">
-                <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase tracking-wider">
-                  <tr>
-                    <th className="px-4 py-3">Batter</th>
-                    <th className="px-4 py-3 text-right">R</th>
-                    <th className="px-4 py-3 text-right">B</th>
-                    <th className="px-4 py-3 text-right">4s</th>
-                    <th className="px-4 py-3 text-right">6s</th>
-                    <th className="px-4 py-3 text-right">SR</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {[striker, nonStriker].filter(Boolean).map((p, idx) => {
-                    const s = stats[p!.id] || { runs: 0, ballsFaced: 0, fours: 0, sixes: 0 };
-                    const sr = s.ballsFaced > 0 ? ((s.runs / s.ballsFaced) * 100).toFixed(1) : '0.0';
-                    return (
-                      <tr key={p!.id} className={idx === 0 && !matchWinner && !pendingAction ? 'bg-blue-500/5' : ''}>
-                        <td className="px-4 py-4 font-medium flex justify-between items-center">
-                          <div>
-                            {p!.name} {idx === 0 && !matchWinner && !pendingAction && <span className="text-blue-500 ml-1">*</span>}
-                          </div>
-                          {!matchWinner && !pendingAction && (
-                            <div className="flex gap-2 ml-2">
-                              <button onClick={() => changeBatter(p!.id)} className="text-[10px] bg-slate-800 text-slate-400 hover:text-blue-400 px-2 py-1 rounded uppercase font-bold">Change</button>
-                              <button onClick={() => retireBatter(p!.id)} className="text-[10px] bg-slate-800 text-slate-400 hover:text-red-400 px-2 py-1 rounded uppercase font-bold">Retire</button>
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-4 text-right font-bold">{s.runs}</td>
-                        <td className="px-4 py-4 text-right text-slate-400">{s.ballsFaced}</td>
-                        <td className="px-4 py-4 text-right text-slate-400">{s.fours}</td>
-                        <td className="px-4 py-4 text-right text-slate-400">{s.sixes}</td>
-                        <td className="px-4 py-4 text-right text-slate-400">{sr}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Bowling Stats */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-            <div className="flex justify-between items-center px-4 py-3 bg-slate-800/50">
-              <span className="text-xs uppercase tracking-wider text-slate-400 font-bold">Current Bowler</span>
-              {!matchWinner && !pendingAction && (
-                <button 
-                  onClick={() => setPendingAction({ type: 'selectBowler', message: 'Select Bowler', isAutoTriggered: false })} 
-                  className="text-xs text-blue-400 font-bold hover:text-blue-300"
-                >
-                  CHANGE
-                </button>
-              )}
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left whitespace-nowrap">
-                <thead className="bg-slate-800/30 text-slate-500 text-[10px] uppercase tracking-wider">
-                  <tr>
-                    <th className="px-4 py-2">Bowler</th>
-                    <th className="px-4 py-2 text-right">O</th>
-                    <th className="px-4 py-2 text-right">M</th>
-                    <th className="px-4 py-2 text-right">R</th>
-                    <th className="px-4 py-2 text-right">W</th>
-                    <th className="px-4 py-2 text-right">ECON</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bowler && (() => {
-                    const bStats = stats[bowler.id] || { ballsBowled: 0, runsConceded: 0, wickets: 0, maidens: 0 };
-                    const economy = bStats.ballsBowled > 0 ? ((bStats.runsConceded / bStats.ballsBowled) * 6).toFixed(2) : '0.00';
-                    return (
-                      <tr>
-                        <td className="px-4 py-4 font-medium">{bowler.name}</td>
-                        <td className="px-4 py-4 text-right">{formatOvers(bStats.ballsBowled)}</td>
-                        <td className="px-4 py-4 text-right">{bStats.maidens}</td>
-                        <td className="px-4 py-4 text-right font-bold">{bStats.runsConceded}</td>
-                        <td className="px-4 py-4 text-right font-bold text-red-400">{bStats.wickets}</td>
-                        <td className="px-4 py-4 text-right">{economy}</td>
-                      </tr>
-                    );
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Ball Log */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <h3 className="text-sm font-bold text-slate-400 mb-3 uppercase tracking-wider">Recent Balls</h3>
-            <div className="flex gap-2 overflow-x-auto pb-2 items-center">
-              {ballLog.slice(0, 12).map((ball, i, arr) => (
-                <React.Fragment key={i}>
-                  <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border-2 ${
-                    ball.isWicket ? 'bg-red-500 border-red-400' : 
-                    ball.runs === 4 ? 'bg-green-600 border-green-500' :
-                    ball.runs === 6 ? 'bg-purple-600 border-purple-500' :
-                    ball.type !== 'legal' ? 'bg-yellow-600 border-yellow-500' :
-                    'bg-slate-800 border-slate-700'
-                  }`}>
-                    {ball.isWicket ? 'W' : 
-                     ball.type === 'wide' ? `${ball.extras}wd` :
-                     ball.type === 'noball' ? (ball.runs > 0 ? `${ball.runs}+NB` : 'NB') :
-                     ball.runs}
-                  </div>
-                  {ball.isEndOfOver && i !== arr.length - 1 && (
-                    <div className="flex-shrink-0 w-px h-8 bg-slate-700 mx-1 rounded-full"></div>
-                  )}
-                </React.Fragment>
-              ))}
-              {ballLog.length === 0 && <p className="text-slate-600 text-sm">No balls bowled yet</p>}
-            </div>
-          </div>
-        </div>
-
+      <div className="flex flex-col max-w-md mx-auto gap-6 w-full">
         {/* Scorepad */}
         <div className="order-1 lg:order-2 space-y-4">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="flex justify-between gap-3 w-full">
             {[0, 1, 2, 3, 4, 6].map(runs => (
               <button
                 key={runs}
-                disabled={!!matchWinner || !!pendingAction}
+                disabled={!!matchWinner || !!pendingAction || !!matchState.pendingWicket}
                 onClick={() => updateMatch('legal', runs)}
-                className="aspect-square bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all rounded-2xl flex flex-col items-center justify-center border border-slate-700"
+                className={`aspect-square flex-1 ${getRunColor(runs)} text-black disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all rounded-full flex flex-col items-center justify-center shadow-lg min-w-[48px]`}
               >
-                <span className="text-2xl font-black">{runs === 0 ? '•' : runs}</span>
-                <span className="text-[10px] text-slate-500 font-bold uppercase">{runs === 0 ? 'Dot' : 'Runs'}</span>
+                <span className="text-xl font-black">{runs === 0 ? 'Dot' : runs}</span>
               </button>
             ))}
+          </div>
+
+          <div className="flex gap-3 w-full">
             <button
-              disabled={!!matchWinner || !!pendingAction}
+              disabled={!!matchWinner || !!pendingAction || !!matchState.pendingWicket}
               onClick={() => updateMatch('wide', 0, 1)}
-              className="aspect-square bg-yellow-900/30 hover:bg-yellow-900/50 disabled:opacity-50 disabled:cursor-not-allowed text-yellow-500 border border-yellow-700/50 active:scale-95 transition-all rounded-2xl flex flex-col items-center justify-center"
+              className="flex-1 bg-orange-500 hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white active:scale-95 transition-all rounded-xl py-4 flex flex-col items-center justify-center shadow-lg"
             >
-              <span className="text-xl font-black">WD</span>
-              <span className="text-[10px] font-bold uppercase">Wide</span>
+              <span className="text-sm font-bold">Wide</span>
             </button>
             <button
-              disabled={!!matchWinner || !!pendingAction}
+              disabled={!!matchWinner || !!pendingAction || !!matchState.pendingWicket}
               onClick={() => setPendingAction({ type: 'noBallRuns', message: 'Runs scored off No Ball?', isAutoTriggered: true })}
-              className="aspect-square bg-orange-900/30 hover:bg-orange-900/50 disabled:opacity-50 disabled:cursor-not-allowed text-orange-500 border border-orange-700/50 active:scale-95 transition-all rounded-2xl flex flex-col items-center justify-center"
+              className="flex-1 bg-orange-500 hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white active:scale-95 transition-all rounded-xl py-4 flex flex-col items-center justify-center shadow-lg"
             >
-              <span className="text-xl font-black">NB</span>
-              <span className="text-[10px] font-bold uppercase">No Ball</span>
+              <span className="text-sm font-bold">No Ball</span>
             </button>
-            <div className="flex flex-col gap-2">
-              <button
-                disabled={!!matchWinner || !!pendingAction}
-                onClick={() => updateMatch('wicket', 0, 0, true)}
-                className="flex-1 bg-red-900/30 hover:bg-red-900/50 disabled:opacity-50 disabled:cursor-not-allowed text-red-500 border border-red-700/50 active:scale-95 transition-all rounded-2xl flex flex-col items-center justify-center"
-              >
-                <span className="text-xl font-black">W</span>
-                <span className="text-[10px] font-bold uppercase">Wicket</span>
-              </button>
-              <button
-                disabled={!!matchWinner || !!pendingAction}
-                onClick={handleRunOutClick}
-                className="flex-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300 border border-slate-700 active:scale-95 transition-all rounded-2xl flex flex-col items-center justify-center py-2"
-              >
-                <span className="text-xs font-black uppercase">Run Out</span>
-              </button>
-            </div>
+          </div>
+
+          <div className="flex gap-3 w-full">
+            <button
+              disabled={!!matchWinner || !!pendingAction || !!matchState.pendingWicket}
+              onClick={() => setPendingAction({ type: 'wicketType', step: 'selectType', message: 'How was the wicket?' })}
+              className="flex-1 bg-red-500/60 hover:bg-red-500/80 disabled:opacity-50 disabled:cursor-not-allowed text-white active:scale-95 transition-all rounded-xl py-4 flex flex-col items-center justify-center shadow-lg"
+            >
+              <span className="text-sm font-bold">Wicket</span>
+            </button>
           </div>
           
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 text-center">
-            <p className="text-xs text-slate-500 uppercase font-bold mb-1">Extras</p>
-            <p className="text-sm font-medium">
-              W: {extras.wides} | NB: {extras.noBalls} | B: {extras.byes} | LB: {extras.legByes}
-            </p>
+          {/* Details Panel */}
+          <div className="bg-[#171717] rounded-[20px] p-5 w-full flex flex-col gap-4 mt-8">
+            {/* Extras Summary */}
+            <div className="flex justify-between items-center w-full">
+              <span className="text-sm text-white font-normal">Extras: {extras.wides + extras.noBalls + extras.byes + extras.legByes}</span>
+              <span className="text-xs text-neutral-400 font-normal">(Wd: {extras.wides}, Nb: {extras.noBalls}, B: {extras.byes}, Lb: {extras.legByes})</span>
+            </div>
+
+            <div className="w-full h-px bg-white/10"></div>
+
+            {/* Batters */}
+            <div className="flex flex-col gap-2">
+              {[
+                { p: striker, role: 'strikerId' as const },
+                { p: nonStriker, role: 'nonStrikerId' as const }
+              ].map(({ p, role }, idx) => {
+                if (!p) {
+                   return (
+                     <div key={role} className="flex justify-between items-center w-full py-1">
+                        <button 
+                          onClick={() => setPendingAction({ 
+                            type: 'selectBatter', 
+                            message: 'Select next batter', 
+                            replaceTarget: role,
+                            isAutoTriggered: true
+                          })}
+                          className="text-xs bg-white text-black px-3 py-1.5 rounded-lg font-bold hover:bg-neutral-200 transition-colors"
+                        >
+                          Select {idx === 0 ? 'Striker' : 'Non-Striker'}
+                        </button>
+                        <span className="text-sm text-neutral-500 italic">Waiting...</span>
+                     </div>
+                   );
+                }
+
+                const s = stats[p.id] || { runs: 0, ballsFaced: 0 };
+                const isStriker = idx === 0 && !matchWinner && !pendingAction && !matchState.pendingWicket;
+                return (
+                  <div key={p.id} className="flex justify-between items-center w-full">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm ${isStriker ? 'text-white font-bold' : 'text-neutral-400 font-normal'}`}>
+                        {p.name} {isStriker && '*'}
+                      </span>
+                      {!matchWinner && !pendingAction && !matchState.pendingWicket && (
+                        <div className="flex gap-1 ml-2">
+                          <button onClick={() => changeBatter(p.id)} className="text-[9px] bg-white/10 text-white hover:bg-white/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Change</button>
+                          <button onClick={() => retireBatter(p.id)} className="text-[9px] bg-red-500/20 text-red-400 hover:bg-red-500/40 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Retire</button>
+                        </div>
+                      )}
+                    </div>
+                    <span className={`text-sm ${isStriker ? 'text-white font-normal' : 'text-neutral-400 font-normal'}`}>
+                      {s.runs} ({s.ballsFaced})
+                    </span>
+                  </div>
+                );
+              })}
+              {!matchWinner && !pendingAction && !matchState.pendingWicket && nonStrikerId && (
+                <button onClick={manualSwapStrike} className="text-[10px] text-white border border-white/20 hover:bg-white/10 py-1.5 rounded-lg mt-2 font-bold uppercase tracking-wider text-center w-full">Swap Strike</button>
+              )}
+            </div>
+
+            <div className="w-full h-px bg-white/10"></div>
+
+            {/* Bowler */}
+            <div className="flex justify-between items-center w-full">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-white font-normal">{bowler?.name || 'No Bowler'}</span>
+                {!matchWinner && !pendingAction && (
+                  <button
+                    onClick={() => setPendingAction({ type: 'selectBowler', message: 'Select Bowler', isAutoTriggered: false })}
+                    className="text-[9px] bg-white/10 text-white hover:bg-white/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider"
+                  >                    Change
+                  </button>
+                )}
+              </div>
+              {bowler && (() => {
+                const bStats = stats[bowler.id] || { ballsBowled: 0, runsConceded: 0, wickets: 0, maidens: 0 };
+                return (
+                  <span className="text-sm text-white font-normal">
+                    {formatOvers(bStats.ballsBowled)} - {bStats.maidens} - {bStats.runsConceded} - {bStats.wickets}
+                  </span>
+                );
+              })()}
+            </div>
           </div>
+
+          <button
+            disabled={!matchState.undoHistory?.length || !!matchWinner || !!pendingAction}
+            onClick={handleUndo}
+            className="w-full py-4 bg-transparent border border-white hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold transition-all"
+          >
+            Undo Last Action
+          </button>
+
+          {!matchWinner && (
+             <div className="flex gap-3 w-full">
+                <button onClick={handleEditTeams} className="flex-1 py-3 bg-transparent border border-white/20 hover:bg-white/10 text-white rounded-xl text-sm font-bold uppercase tracking-wider transition-all">Edit Teams</button>
+                <button onClick={handleEditOvers} className="flex-1 py-3 bg-transparent border border-white/20 hover:bg-white/10 text-white rounded-xl text-sm font-bold uppercase tracking-wider transition-all">Edit Overs</button>
+             </div>
+          )}
 
           {!matchWinner && (
             <button
               onClick={endMatch}
-              className="w-full py-4 bg-red-600/20 hover:bg-red-600/40 text-red-500 border border-red-600/50 rounded-xl font-bold transition-all"
+              className="w-full py-4 bg-transparent border border-red-500 hover:bg-red-500/10 text-red-500 rounded-xl font-bold transition-all"
             >
               End Match
             </button>
           )}
-          
-          <div className="flex gap-3">
-            <button
-              disabled={!matchState.undoHistory?.length || !!matchWinner || !!pendingAction}
-              onClick={handleUndo}
-              className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300 rounded-xl text-sm font-bold transition-all"
-            >
-              Undo
-            </button>
-            <button
-              onClick={() => window.location.href = '/'}
-              className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl text-sm font-bold transition-all"
-            >
-              Home
-            </button>
-            <button
-              onClick={() => window.location.href = `/scorecard/${matchState.id}`}
-              className="flex-1 py-3 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/50 rounded-xl text-sm font-bold transition-all"
-            >
-              Scorecard
-            </button>
-          </div>
         </div>
       </div>
 
       {/* Pending Action Modal */}
       {pendingAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-blue-500/50 rounded-2xl p-6 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto relative">
+          <div className="bg-neutral-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto relative">
             <button 
               onClick={handleClosePendingAction}
-              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white transition-colors"
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-neutral-800 hover:bg-neutral-700 rounded-full text-neutral-400 hover:text-white transition-colors"
             >
               ✕
             </button>
@@ -757,7 +781,50 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                   <button
                     key={p.id}
                     onClick={() => selectNextBatter(p.id)}
-                    className="bg-slate-800 hover:bg-slate-700 p-4 rounded-xl font-bold transition-colors border border-slate-700"
+                    className="bg-[#171717] hover:bg-white/10 text-white p-4 rounded-xl font-bold transition-colors border border-white/10"
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {pendingAction.type === 'wicketType' && pendingAction.step === 'selectType' && (
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => updateMatch('wicket', 0, 0, true, false, { dismissalType: 'bowled' })} 
+                  className="bg-[#171717] hover:bg-white/10 text-white p-6 rounded-xl font-bold transition-colors border border-white/10 flex flex-col items-center justify-center gap-2"
+                >
+                  <span className="text-lg">Bowled</span>
+                </button>
+                <button 
+                  onClick={() => setPendingAction({ ...pendingAction, step: 'selectFielder', dismissalType: 'catch', message: 'Who caught it?' })} 
+                  className="bg-[#171717] hover:bg-white/10 text-white p-6 rounded-xl font-bold transition-colors border border-white/10 flex flex-col items-center justify-center gap-2"
+                >
+                  <span className="text-lg">Caught</span>
+                </button>
+                <button 
+                  onClick={() => setPendingAction({ ...pendingAction, step: 'selectFielder', dismissalType: 'stump', message: 'Who stumped?' })} 
+                  className="bg-[#171717] hover:bg-white/10 text-white p-6 rounded-xl font-bold transition-colors border border-white/10 flex flex-col items-center justify-center gap-2"
+                >
+                  <span className="text-lg">Stumping</span>
+                </button>
+                <button 
+                  onClick={handleRunOutClick} 
+                  className="bg-[#171717] hover:bg-white/10 text-white p-6 rounded-xl font-bold transition-colors border border-white/10 flex flex-col items-center justify-center gap-2"
+                >
+                  <span className="text-lg">Run Out</span>
+                </button>
+              </div>
+            )}
+
+            {pendingAction.type === 'wicketType' && pendingAction.step === 'selectFielder' && (
+              <div className="grid grid-cols-2 gap-3">
+                {bowlingTeam.players.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => updateMatch('wicket', 0, 0, true, false, { dismissalType: pendingAction.dismissalType, fielderId: p.id })}
+                    className="bg-[#171717] hover:bg-white/10 text-white p-4 rounded-xl font-bold transition-colors border border-white/10"
                   >
                     {p.name}
                   </button>
@@ -769,7 +836,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
               <div className="flex gap-3">
                 <button
                   onClick={() => setPendingAction(null)}
-                  className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-all"
+                  className="flex-1 py-4 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl font-bold transition-all"
                 >
                   Cancel
                 </button>
@@ -787,18 +854,18 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                 {striker && (
                   <button
                     onClick={() => processRunOut(striker.id)}
-                    className="bg-slate-800 hover:bg-slate-700 p-6 rounded-xl font-bold transition-colors border border-slate-700 text-center"
+                    className="bg-neutral-800 hover:bg-neutral-700 p-6 rounded-xl font-bold transition-colors border border-neutral-700 text-center"
                   >
-                    <p className="text-xs text-slate-500 uppercase mb-1">Striker</p>
+                    <p className="text-xs text-neutral-500 uppercase mb-1">Striker</p>
                     <p className="text-lg">{striker.name}</p>
                   </button>
                 )}
                 {nonStriker && (
                   <button
                     onClick={() => processRunOut(nonStriker.id)}
-                    className="bg-slate-800 hover:bg-slate-700 p-6 rounded-xl font-bold transition-colors border border-slate-700 text-center"
+                    className="bg-neutral-800 hover:bg-neutral-700 p-6 rounded-xl font-bold transition-colors border border-neutral-700 text-center"
                   >
-                    <p className="text-xs text-slate-500 uppercase mb-1">Non-Striker</p>
+                    <p className="text-xs text-neutral-500 uppercase mb-1">Non-Striker</p>
                     <p className="text-lg">{nonStriker.name}</p>
                   </button>
                 )}
@@ -808,7 +875,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
             {pendingAction.type === 'editOvers' && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Total Overs</label>
+                  <label className="block text-xs font-bold text-neutral-400 uppercase mb-2">Total Overs</label>
                   <input
                     type="number"
                     min="1"
@@ -819,12 +886,12 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                         setMatchState(prev => ({ ...prev, maxOvers: val }));
                       }
                     }}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-white text-lg focus:border-blue-500 outline-none transition-colors"
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded-xl p-4 text-white text-lg focus:border-violet-500 outline-none transition-colors"
                   />
                 </div>
                 <button
                   onClick={() => setPendingAction(null)}
-                  className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20"
+                  className="w-full py-4 bg-white text-black hover:bg-neutral-200 rounded-xl font-bold transition-all shadow-lg shadow-violet-500/20"
                 >
                   Done
                 </button>
@@ -836,25 +903,25 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                 <div className="flex gap-2">
                   <button 
                     onClick={() => setPendingAction({...pendingAction, step: 'team1'})}
-                    className={`flex-1 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${pendingAction.step === 'team1' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                    className={`flex-1 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${pendingAction.step === 'team1' ? 'bg-white text-black' : 'bg-neutral-800 text-neutral-400'}`}
                   >
                     {teams[0].name}
                   </button>
                   <button 
                     onClick={() => setPendingAction({...pendingAction, step: 'team2'})}
-                    className={`flex-1 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${pendingAction.step === 'team2' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                    className={`flex-1 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${pendingAction.step === 'team2' ? 'bg-white text-black' : 'bg-neutral-800 text-neutral-400'}`}
                   >
                     {teams[1].name}
                   </button>
                 </div>
 
-                <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                <div className="bg-white/5 p-4 rounded-xl border border-neutral-700">
                   <div className="flex gap-2 mb-4">
                     <input 
                       id="edit-player-name"
                       type="text" 
                       placeholder="Add Player"
-                      className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm outline-none focus:border-blue-500"
+                      className="flex-1 bg-neutral-900 border border-neutral-700 rounded-lg p-2 text-sm outline-none focus:border-violet-500"
                     />
                     <button 
                       onClick={() => {
@@ -865,14 +932,14 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                         updateTeamPlayers(teamIdx, [...teams[teamIdx].players, newPlayer]);
                         input.value = '';
                       }}
-                      className="bg-blue-600 hover:bg-blue-500 px-4 rounded-lg font-bold text-sm"
+                      className="bg-white text-black hover:bg-neutral-200 text-black px-4 rounded-lg font-bold text-sm"
                     >
                       +
                     </button>
                   </div>
                   <ul className="space-y-2 max-h-48 overflow-y-auto">
                     {teams[pendingAction.step === 'team1' ? 0 : 1].players.map(p => (
-                      <li key={p.id} className="flex justify-between items-center bg-slate-900 p-2 rounded px-3 text-sm">
+                      <li key={p.id} className="flex justify-between items-center bg-neutral-900 p-2 rounded px-3 text-sm">
                         <input 
                           value={p.name}
                           onChange={(e) => {
@@ -880,7 +947,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                             const newPlayers = teams[teamIdx].players.map(pl => pl.id === p.id ? {...pl, name: e.target.value} : pl);
                             updateTeamPlayers(teamIdx, newPlayers);
                           }}
-                          className="bg-transparent outline-none focus:text-blue-400"
+                          className="bg-transparent outline-none focus:text-white"
                         />
                         <button 
                           onClick={() => {
@@ -897,7 +964,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                 </div>
                 <button
                   onClick={() => setPendingAction(null)}
-                  className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20"
+                  className="w-full py-4 bg-white text-black hover:bg-neutral-200 rounded-xl font-bold shadow-lg shadow-violet-500/20"
                 >
                   Done Editing
                 </button>
@@ -906,10 +973,10 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
 
             {pendingAction.type === 'nextOver' && pendingAction.step === 'confirm' && (
               <div className="text-center">
-                <p className="text-slate-400 mb-6">Current over finished. Proceed to the next over?</p>
+                <p className="text-neutral-400 mb-6">Current over finished. Proceed to the next over?</p>
                 <button
                   onClick={() => setPendingAction({ ...pendingAction, step: 'select', message: 'Select Bowler' })}
-                  className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-500/20"
+                  className="w-full py-4 bg-white text-black hover:bg-neutral-200 rounded-xl font-bold text-lg shadow-lg shadow-violet-500/20"
                 >
                   Next Over
                 </button>
@@ -923,7 +990,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                     key={p.id}
                     onClick={() => selectNextBowler(p.id)}
                     className={`p-4 rounded-xl font-bold transition-colors border ${
-                      p.id === currentBowlerId ? 'bg-blue-600 border-blue-400' : 'bg-slate-800 border-slate-700 hover:bg-slate-700'
+                      p.id === currentBowlerId ? 'bg-white text-black border-violet-400' : 'bg-neutral-800 border-neutral-700 hover:bg-neutral-700'
                     }`}
                   >
                     {p.name}
@@ -941,10 +1008,10 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                       updateMatch('noball', runs, 1, false, true);
                       if (pendingAction?.type === 'noBallRuns') setPendingAction(null);
                     }}
-                    className="aspect-square bg-slate-800 hover:bg-slate-700 p-4 rounded-xl font-black text-2xl transition-colors border border-slate-700 flex flex-col items-center justify-center"
+                    className={`aspect-square ${getExtraRunColor(runs)} text-white p-4 rounded-xl font-black text-2xl transition-colors flex flex-col items-center justify-center`}
                   >
                     <span>{runs}</span>
-                    <span className="text-[10px] text-slate-500 font-bold uppercase mt-1">Runs</span>
+                    <span className="text-[10px] text-white font-bold uppercase mt-1">Runs</span>
                   </button>
                 ))}
               </div>
@@ -954,10 +1021,10 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
               <div className="space-y-6">
                 {pendingAction.step !== 'select' ? (
                   <div className="text-center">
-                    <p className="text-slate-400 mb-6">{battingTeam.name} Innings Finished!</p>
+                    <p className="text-neutral-400 mb-6">{battingTeam.name} Innings Finished!</p>
                     <button
                       onClick={startNextInnings}
-                      className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-500/20"
+                      className="w-full py-4 bg-white text-black hover:bg-neutral-200 rounded-xl font-bold text-lg shadow-lg shadow-violet-500/20"
                     >
                       Start 2nd Innings
                     </button>
@@ -965,9 +1032,9 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                 ) : (
                   <div className="grid gap-4">
                     <div>
-                      <label className="text-xs text-slate-500 font-bold uppercase mb-1 block">Striker</label>
+                      <label className="text-xs text-neutral-500 font-bold uppercase mb-1 block">Striker</label>
                       <select 
-                        className="w-full bg-slate-800 p-3 rounded-lg border border-slate-700 outline-none"
+                        className="w-full bg-neutral-800 p-3 rounded-lg border border-neutral-700 outline-none"
                         value={setupStriker}
                         onChange={e => setSetupStriker(e.target.value)}
                       >
@@ -976,9 +1043,9 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs text-slate-500 font-bold uppercase mb-1 block">Non-Striker</label>
+                      <label className="text-xs text-neutral-500 font-bold uppercase mb-1 block">Non-Striker</label>
                       <select 
-                        className="w-full bg-slate-800 p-3 rounded-lg border border-slate-700 outline-none"
+                        className="w-full bg-neutral-800 p-3 rounded-lg border border-neutral-700 outline-none"
                         value={setupNonStriker}
                         onChange={e => setSetupNonStriker(e.target.value)}
                       >
@@ -987,9 +1054,9 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs text-slate-500 font-bold uppercase mb-1 block">Bowler</label>
+                      <label className="text-xs text-neutral-500 font-bold uppercase mb-1 block">Bowler</label>
                       <select 
-                        className="w-full bg-slate-800 p-3 rounded-lg border border-slate-700 outline-none"
+                        className="w-full bg-neutral-800 p-3 rounded-lg border border-neutral-700 outline-none"
                         value={setupBowler}
                         onChange={e => setSetupBowler(e.target.value)}
                       >
@@ -1000,7 +1067,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                     <button
                       disabled={!setupStriker || !setupNonStriker || !setupBowler || setupStriker === setupNonStriker}
                       onClick={() => finalizeInningsSetup(setupStriker, setupNonStriker, setupBowler)}
-                      className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl font-bold text-lg mt-2 transition-all"
+                      className="w-full py-4 bg-white text-black hover:bg-neutral-200 text-black disabled:opacity-50 text-white rounded-xl font-bold text-lg mt-2 transition-all"
                     >
                       Confirm Lineup
                     </button>
