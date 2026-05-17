@@ -317,40 +317,17 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
       newStats[playerId] = batterStats;
       newState.stats = newStats;
 
-      newState.wickets += 1;
-
-      const isAllOut = newState.wickets >= battingTeam.players.length;
-      
-      if (!isAllOut) {
-         nextPending = { 
-            type: 'selectBatter', 
-            message: 'Batter Retired! Select next batter',
-            replaceTarget: playerId === prev.strikerId ? 'strikerId' : 'nonStrikerId',
-            isAutoTriggered: true
-         };
-      } else {
-         if (newState.currentInnings === 1) {
-            nextPending = { type: 'inningsTransition', message: 'End of 1st Innings', isAutoTriggered: true };
-         } else {
-            const runsToWin = targetScore!;
-            if (newState.totalRuns >= runsToWin) {
-              newState.matchWinner = `${battingTeam.name} won by ${battingTeam.players.length - newState.wickets} wickets!`;
-            } else if (newState.totalRuns === runsToWin - 1) {
-              newState.matchWinner = "Match Tied!";
-            } else {
-              newState.matchWinner = `${bowlingTeam.name} won by ${runsToWin - 1 - newState.totalRuns} runs!`;
-            }
-         }
-      }
+      nextPending = { 
+        type: 'selectBatter', 
+        message: 'Batter Retired! Select next batter',
+        replaceTarget: playerId === prev.strikerId ? 'strikerId' : 'nonStrikerId',
+        isAutoTriggered: true
+      };
 
       return newState;
     });
 
-    if (nextPending) {
-      setPendingAction(nextPending);
-    } else {
-      setPendingAction(null);
-    }
+    setPendingAction(nextPending);
   };
 
   const selectNextBowler = (playerId: string) => {
@@ -571,12 +548,12 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
 
   const getExtraRunColor = (runs: number) => {
     switch (runs) {
-      case 0: return 'bg-orange-500/40 hover:bg-orange-500/60 transition-colors';
-      case 1: return 'bg-orange-500/50 hover:bg-orange-500/70 transition-colors';
-      case 2: return 'bg-orange-500/60 hover:bg-orange-500/80 transition-colors';
-      case 3: return 'bg-orange-500/70 hover:bg-orange-500/90 transition-colors';
-      case 4: return 'bg-orange-500/80 hover:bg-orange-500 transition-colors';
-      case 6: return 'bg-orange-500 transition-colors';
+      case 0: return 'bg-[#bd5326]/40 hover:bg-[#bd5326]/60 transition-colors';
+      case 1: return 'bg-[#bd5326]/50 hover:bg-[#bd5326]/70 transition-colors';
+      case 2: return 'bg-[#bd5326]/60 hover:bg-[#bd5326]/80 transition-colors';
+      case 3: return 'bg-[#bd5326]/70 hover:bg-[#bd5326]/90 transition-colors';
+      case 4: return 'bg-[#bd5326]/80 hover:bg-[#bd5326] transition-colors';
+      case 6: return 'bg-[#bd5326] transition-colors';
       default: return 'bg-white hover:bg-neutral-200 transition-colors';
     }
   };
@@ -628,14 +605,14 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
             <button
               disabled={!!matchWinner || !!pendingAction || !!matchState.pendingWicket}
               onClick={() => updateMatch('wide', 0, 1)}
-              className="flex-1 bg-orange-500 hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white active:scale-95 transition-all rounded-xl py-4 flex flex-col items-center justify-center shadow-lg"
+              className="flex-1 bg-[#bd5326] hover:bg-[#bd5326]/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white active:scale-95 transition-all rounded-xl py-4 flex flex-col items-center justify-center shadow-lg"
             >
               <span className="text-sm font-bold">Wide</span>
             </button>
             <button
               disabled={!!matchWinner || !!pendingAction || !!matchState.pendingWicket}
               onClick={() => setPendingAction({ type: 'noBallRuns', message: 'Runs scored off No Ball?', isAutoTriggered: true })}
-              className="flex-1 bg-orange-500 hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white active:scale-95 transition-all rounded-xl py-4 flex flex-col items-center justify-center shadow-lg"
+              className="flex-1 bg-[#bd5326] hover:bg-[#bd5326]/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white active:scale-95 transition-all rounded-xl py-4 flex flex-col items-center justify-center shadow-lg"
             >
               <span className="text-sm font-bold">No Ball</span>
             </button>
@@ -645,7 +622,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
             <button
               disabled={!!matchWinner || !!pendingAction || !!matchState.pendingWicket}
               onClick={() => setPendingAction({ type: 'wicketType', step: 'selectType', message: 'How was the wicket?' })}
-              className="flex-1 bg-red-500/60 hover:bg-red-500/80 disabled:opacity-50 disabled:cursor-not-allowed text-white active:scale-95 transition-all rounded-xl py-4 flex flex-col items-center justify-center shadow-lg"
+              className="flex-1 bg-[#bf1f1f] hover:bg-[#bf1f1f]/80 disabled:opacity-50 disabled:cursor-not-allowed text-white active:scale-95 transition-all rounded-xl py-4 flex flex-col items-center justify-center shadow-lg"
             >
               <span className="text-sm font-bold">Wicket</span>
             </button>
