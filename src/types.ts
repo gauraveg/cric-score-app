@@ -22,6 +22,7 @@ export interface Team {
   id: string;
   name: string;
   players: Player[];
+  captainId?: string;
 }
 
 export interface Ball {

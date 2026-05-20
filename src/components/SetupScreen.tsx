@@ -17,10 +17,12 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
   const [maxOvers, setMaxOvers] = useState(5);
   const [addingPlayerTeamIdx, setAddingPlayerTeamIdx] = useState<number | null>(null);
   const [newPlayerName, setNewPlayerName] = useState('');
+  const [isNewPlayerCaptain, setIsNewPlayerCaptain] = useState(false);
 
   const handleAddPlayerClick = (teamIndex: number) => {
     setAddingPlayerTeamIdx(teamIndex);
     setNewPlayerName('');
+    setIsNewPlayerCaptain(false);
   };
 
   const confirmAddPlayer = () => {
@@ -32,21 +34,41 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
     };
 
     const newTeams = [...teams];
-    newTeams[addingPlayerTeamIdx].players.push(newPlayer);
+    const team = newTeams[addingPlayerTeamIdx];
+    team.players.push(newPlayer);
+    
+    if (isNewPlayerCaptain) {
+      team.captainId = newPlayer.id;
+      team.name = `${newPlayer.name}'s team`;
+    }
+    
     setTeams(newTeams);
     
     setAddingPlayerTeamIdx(null);
     setNewPlayerName('');
+    setIsNewPlayerCaptain(false);
   };
 
   const cancelAddPlayer = () => {
     setAddingPlayerTeamIdx(null);
     setNewPlayerName('');
+    setIsNewPlayerCaptain(false);
+  };
+
+  const makeCaptain = (teamIndex: number, playerId: string, playerName: string) => {
+    const newTeams = [...teams];
+    newTeams[teamIndex].captainId = playerId;
+    newTeams[teamIndex].name = `${playerName}'s team`;
+    setTeams(newTeams);
   };
 
   const removePlayer = (teamIndex: number, playerId: string) => {
     const newTeams = [...teams];
-    newTeams[teamIndex].players = newTeams[teamIndex].players.filter(p => p.id !== playerId);
+    const team = newTeams[teamIndex];
+    team.players = team.players.filter(p => p.id !== playerId);
+    if (team.captainId === playerId) {
+      team.captainId = undefined;
+    }
     setTeams(newTeams);
   };
 
@@ -75,12 +97,41 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
               }}
             />
             <ul className="space-y-2 mb-4">
-              {team.players.map(player => (
-                <li key={player.id} className="flex justify-between items-center bg-transparent border border-white/10 p-2.5 rounded-lg px-4">
-                  <span className="text-white text-sm">{player.name}</span>
-                  <button onClick={() => removePlayer(idx, player.id)} className="text-red-500 hover:text-red-400 p-1 font-bold">✕</button>
-                </li>
-              ))}
+              {team.players.map(player => {
+                const isCaptain = team.captainId === player.id;
+                return (
+                  <li key={player.id} className="flex items-center bg-transparent border border-white/10 p-2.5 rounded-lg px-4 gap-3">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-white text-sm font-medium truncate block">
+                        {player.name} {isCaptain && <span className="text-[10px] text-neutral-400 font-normal ml-1">(C)</span>}
+                      </span>
+                    </div>
+                    
+                    {!isCaptain && (
+                      <button 
+                        onClick={() => makeCaptain(idx, player.id, player.name)}
+                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md text-[10px] text-white font-bold transition-colors whitespace-nowrap"
+                      >
+                        Set Captain
+                      </button>
+                    )}
+                    
+                    {isCaptain && (
+                      <div className="px-3 py-1.5 bg-white/10 border border-white/20 rounded-md text-[10px] text-white font-bold whitespace-nowrap">
+                        Captain
+                      </div>
+                    )}
+
+                    <button 
+                      onClick={() => removePlayer(idx, player.id)} 
+                      className="text-red-500 hover:text-red-400 p-2 font-bold ml-1"
+                      title="Remove Player"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
             <button 
               onClick={() => handleAddPlayerClick(idx)}
@@ -121,11 +172,20 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
               autoFocus
               type="text"
               placeholder="Player Name"
-              className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg p-3 outline-none focus:border-white text-white mb-6 transition-colors"
+              className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg p-3 outline-none focus:border-white text-white mb-4 transition-colors"
               value={newPlayerName}
               onChange={(e) => setNewPlayerName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && confirmAddPlayer()}
             />
+            <label className="flex items-center gap-3 mb-6 cursor-pointer group">
+              <input 
+                type="checkbox"
+                className="w-5 h-5 rounded border-white/10 bg-[#1a1a1a] checked:bg-white transition-all cursor-pointer"
+                checked={isNewPlayerCaptain}
+                onChange={(e) => setIsNewPlayerCaptain(e.target.checked)}
+              />
+              <span className="text-sm text-neutral-400 group-hover:text-white transition-colors">Make this player captain</span>
+            </label>
             <div className="flex gap-3">
               <button 
                 onClick={cancelAddPlayer}
