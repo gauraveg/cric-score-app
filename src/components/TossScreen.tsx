@@ -9,7 +9,7 @@ interface TossScreenProps {
 const TossScreen: React.FC<TossScreenProps> = ({ onCreateMatch }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const state = location.state as { teams: Team[]; maxOvers: number; isStandalone?: boolean } | null;
+  const state = location.state as { teams: Team[]; maxOvers: number; maxOversPerBowler: number; isStandalone?: boolean } | null;
 
   const isStandalone = state?.isStandalone || false;
 
@@ -31,7 +31,6 @@ const TossScreen: React.FC<TossScreenProps> = ({ onCreateMatch }) => {
     ? [{ id: 'h', name: 'Heads', players: [] }, { id: 't', name: 'Tails', players: [] }] 
     : state.teams;
     
-  const maxOvers = state.maxOvers || 5;
   const team1 = teams[0];
   const team2 = teams[1];
 
@@ -97,7 +96,8 @@ const TossScreen: React.FC<TossScreenProps> = ({ onCreateMatch }) => {
       ballLog: [],
       stats,
       isMatchStarted: true,
-      maxOvers,
+      maxOvers: state.maxOvers || 5,
+      maxOversPerBowler: state.maxOversPerBowler || 1,
       currentInnings: 1,
     };
 

@@ -15,6 +15,7 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
   ]);
   const [teams, setTeams] = useState<Team[]>(lastTeams);
   const [maxOvers, setMaxOvers] = useState(5);
+  const [maxOversPerBowler, setMaxOversPerBowler] = useState(1);
   const [addingPlayerTeamIdx, setAddingPlayerTeamIdx] = useState<number | null>(null);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [isNewPlayerCaptain, setIsNewPlayerCaptain] = useState(false);
@@ -79,7 +80,7 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
     }
 
     setLastTeams(teams);
-    navigate('/toss', { state: { teams, maxOvers } });
+    navigate('/toss', { state: { teams, maxOvers, maxOversPerBowler } });
   };
 
   return (
@@ -153,6 +154,16 @@ const SetupScreen: React.FC<SetupScreenProps> = () => {
             className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg p-3 outline-none focus:border-white text-white text-base transition-colors"
             value={maxOvers}
             onChange={(e) => setMaxOvers(Math.max(1, parseInt(e.target.value) || 1))}
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-normal text-neutral-400 mb-2">Max Overs Per Bowler</label>
+          <input 
+            type="number"
+            className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg p-3 outline-none focus:border-white text-white text-base transition-colors"
+            value={maxOversPerBowler}
+            onChange={(e) => setMaxOversPerBowler(Math.max(1, parseInt(e.target.value) || 1))}
           />
         </div>
 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { MatchState, Ball, Player } from '../types';
+import RecentBalls from './RecentBalls';
 
 interface MatchDashboardProps {
   matchState: MatchState;
@@ -7,7 +8,7 @@ interface MatchDashboardProps {
 }
 
 type PendingAction = {
-  type: 'selectBatter' | 'selectBowler' | 'nextOver' | 'inningsTransition' | 'noBallRuns' | 'retireConfirmation' | 'runOut' | 'editTeams' | 'editOvers' | 'wicketType';
+  type: 'selectBatter' | 'selectBowler' | 'nextOver' | 'inningsTransition' | 'noBallRuns' | 'retireConfirmation' | 'runOut' | 'editTeams' | 'editOvers' | 'wicketType' | 'endMatch';
   step?: 'confirm' | 'select' | 'team1' | 'team2' | 'selectType' | 'selectFielder';
   message: string;
   replaceTarget?: 'strikerId' | 'nonStrikerId';
@@ -43,12 +44,18 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
   } = matchState;
 
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [showAllBowlers, setShowAllBowlers] = useState(false);
 
   const battingTeam = teams.find(t => t.id === battingTeamId)!;
   const bowlingTeam = teams.find(t => t.id === bowlingTeamId)!;
   const striker = battingTeam.players.find(p => p.id === strikerId);
   const nonStriker = battingTeam.players.find(p => p.id === nonStrikerId);
   const bowler = bowlingTeam.players.find(p => p.id === currentBowlerId);
+
+  const getLastOverBowlerId = () => {
+    const lastBallOfPrevOver = ballLog.find((b: Ball) => b.isEndOfOver);
+    return lastBallOfPrevOver?.bowlerId;
+  };
 
   const formatOvers = (balls: number) => {
     return `${Math.floor(balls / 6)}.${balls % 6}`;
@@ -67,6 +74,14 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
     return ((runsNeeded / ballsRemaining) * 6).toFixed(2);
   };
 
+  const checkInningsComplete = () => {
+    if (currentInnings === 1 && (wickets >= battingTeam.players.length || totalBalls >= maxOvers * 6)) {
+      setPendingAction({ type: 'inningsTransition', message: 'End of 1st Innings', isAutoTriggered: true });
+      return true;
+    }
+    return false;
+  };
+
   const updateMatch = (
     ballType: Ball['type'], 
     runs: number, 
@@ -76,6 +91,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
     wicketInfo?: { dismissalType?: 'bowled' | 'catch' | 'stump' | 'runout', fielderId?: string }
   ) => {
     if (matchWinner || (!ignorePending && pendingAction)) return;
+    if (!ignorePending && checkInningsComplete()) return;
 
     let nextPending: PendingAction = null;
 
@@ -112,9 +128,18 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
       if (isLegal) bowlerStats.ballsBowled += 1;
       if (ballType === 'wide') bowlerStats.widesBowled = (bowlerStats.widesBowled || 0) + extraRuns;
       if (ballType === 'noball') bowlerStats.noBallsBowled = (bowlerStats.noBallsBowled || 0) + 1;
-      const isAllOutCalculated = prev.wickets + 1 >= battingTeam.players.length;
+      
+      const newWicketsCount = prev.wickets + (isWicket ? 1 : 0);
+      const isAllOut = newWicketsCount >= battingTeam.players.length;
+      const isLMSStarting = isWicket && newWicketsCount === battingTeam.players.length - 1;
+      
+      const isOversFinished = newState.totalBalls >= maxOvers * 6;
+      const isTargetReached = newState.currentInnings === 2 && newState.totalRuns >= targetScore!;
+
+      const isFinalizingImmediately = isAllOut || isLMSStarting || isOversFinished || isTargetReached;
+
       if (isWicket) {
-        if (isAllOutCalculated) {
+        if (isFinalizingImmediately) {
            bowlerStats.wickets += 1;
            newState.wickets += 1;
            const strikerStats = { ...newStats[prev.strikerId] };
@@ -158,12 +183,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
         newState.nonStrikerId = temp;
       }
 
-      const isAllOut = isAllOutCalculated;
-      const isOversFinished = newState.totalBalls >= maxOvers * 6;
-      
-      const isTargetReached = newState.currentInnings === 2 && newState.totalRuns >= targetScore!;
-
-      if (isWicket && !isAllOut) {
+      if (isWicket && !isAllOut && !isLMSStarting) {
         const replaceTarget = 'strikerId'; // Conventional wicket is always striker
         newState.pendingWicket = {
            outPlayerId: prev.strikerId,
@@ -181,6 +201,10 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
           isAutoTriggered: true,
           replaceTarget
         };
+      } else if (isWicket && isLMSStarting) {
+        // Move the non-striker to striker and empty the non-striker slot
+        newState.strikerId = prev.nonStrikerId;
+        newState.nonStrikerId = '';
       }
 
       if (newState.currentInnings === 1 && (isAllOut || isOversFinished)) {
@@ -204,6 +228,8 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
 
     if (nextPending) {
       setPendingAction(nextPending);
+    } else if (ignorePending) {
+      setPendingAction(null);
     }
   };
 
@@ -256,7 +282,13 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
       newState[target] = playerId;
       return newState;
     });
-    setPendingAction(null);
+    
+    setPendingAction(() => {
+       if (matchState.pendingWicket && matchState.totalBalls > 0 && matchState.totalBalls % 6 === 0 && matchState.totalBalls < maxOvers * 6) {
+          return { type: 'nextOver', step: 'confirm', message: 'Over Complete', isAutoTriggered: true };
+       }
+       return null;
+    });
   };
 
   const handleUndo = () => {
@@ -285,6 +317,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
   };
 
   const changeBatter = (playerId: string) => {
+    if (checkInningsComplete()) return;
     setPendingAction({
       type: 'selectBatter',
       message: 'Change Batter',
@@ -293,7 +326,9 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
     });
   };
 
-  const retireBatter = (playerId: string) => {    setPendingAction({
+  const retireBatter = (playerId: string) => {
+    if (checkInningsComplete()) return;
+    setPendingAction({
       type: 'retireConfirmation',
       message: 'Retire Batter?',
       batterId: playerId,
@@ -316,13 +351,41 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
       batterStats.dismissalText = 'retired';
       newStats[playerId] = batterStats;
       newState.stats = newStats;
+      newState.wickets += 1;
 
-      nextPending = { 
-        type: 'selectBatter', 
-        message: 'Batter Retired! Select next batter',
-        replaceTarget: playerId === prev.strikerId ? 'strikerId' : 'nonStrikerId',
-        isAutoTriggered: true
-      };
+      const availableToComeIn = battingTeam.players.filter(p => 
+        p.id !== prev.strikerId && 
+        p.id !== prev.nonStrikerId && 
+        p.id !== playerId && 
+        (!newStats[p.id]?.isOut || newStats[p.id]?.dismissalText === 'retired')
+      );
+
+      if (availableToComeIn.length === 0) {
+        if (newState.wickets >= battingTeam.players.length) {
+          if (newState.currentInnings === 1) {
+            nextPending = { type: 'inningsTransition', message: 'End of 1st Innings', isAutoTriggered: true };
+          } else {
+            const runsToWin = targetScore!;
+            if (newState.totalRuns >= runsToWin) {
+              newState.matchWinner = `${battingTeam.name} won by ${battingTeam.players.length - newState.wickets} wickets!`;
+            } else {
+              newState.matchWinner = `${bowlingTeam.name} won by ${runsToWin - 1 - newState.totalRuns} runs!`;
+            }
+          }
+        } else {
+          // LMS starts
+          const remainingBatterId = playerId === prev.strikerId ? prev.nonStrikerId : prev.strikerId;
+          newState.strikerId = remainingBatterId;
+          newState.nonStrikerId = '';
+        }
+      } else {
+        nextPending = { 
+          type: 'selectBatter', 
+          message: 'Batter Retired! Select next batter',
+          replaceTarget: playerId === prev.strikerId ? 'strikerId' : 'nonStrikerId',
+          isAutoTriggered: true
+        };
+      }
 
       return newState;
     });
@@ -333,7 +396,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
   const selectNextBowler = (playerId: string) => {
     setMatchState(prev => {
       const newState = { ...prev, currentBowlerId: playerId };
-      if (pendingAction?.type === 'nextOver') {
+      if (pendingAction?.type === 'nextOver' && newState.nonStrikerId) {
         const temp = newState.strikerId;
         newState.strikerId = newState.nonStrikerId;
         newState.nonStrikerId = temp;
@@ -341,6 +404,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
       return newState;
     });
     setPendingAction(null);
+    setShowAllBowlers(false);
   };
 
   const startNextInnings = () => {
@@ -387,11 +451,14 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
       currentBowlerId: bId
     }));
     setPendingAction(null);
+    setShowAllBowlers(false);
   };
 
   const endMatch = () => {
-    if (!window.confirm('Are you sure you want to end the match and declare a winner?')) return;
+    setPendingAction({ type: 'endMatch', message: 'End Match?' });
+  };
 
+  const confirmEndMatch = () => {
     let winner = '';
     if (currentInnings === 1) {
       winner = "Match abandoned / No result";
@@ -407,21 +474,25 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
     }
 
     setMatchState(prev => ({ ...prev, matchWinner: winner }));
+    setPendingAction(null);
   };
 
   const getAvailableBatters = () => {
     return battingTeam.players.filter(p => 
       p.id !== strikerId && 
       p.id !== nonStrikerId &&
-      !ballLog.some(b => b.isWicket && b.strikerId === p.id)
+      p.id !== matchState.pendingWicket?.outPlayerId &&
+      (!stats[p.id]?.isOut || stats[p.id]?.dismissalText === 'retired')
     );
   };
 
   const handleClosePendingAction = () => {
     setPendingAction(null);
+    setShowAllBowlers(false);
   };
 
   const handleRunOutClick = () => {
+    if (checkInningsComplete()) return;
     setPendingAction({
       type: 'runOut',
       message: 'Run Out! Which batter is out?',
@@ -438,9 +509,15 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
 
       const newStats = { ...prev.stats };
       
-      const isAllOutCalculated = prev.wickets + 1 >= battingTeam.players.length;
+      const isAllOutOutCalculated = prev.wickets + 1 >= battingTeam.players.length;
+      const isLMSStarting = prev.wickets + 1 === battingTeam.players.length - 1;
       
-      if (isAllOutCalculated) {
+      const isOversFinished = (newState.totalBalls + 1) >= maxOvers * 6;
+      const isTargetReached = newState.currentInnings === 2 && (newState.totalRuns) >= targetScore!;
+
+      const isFinalizingImmediately = isAllOutOutCalculated || isLMSStarting || isOversFinished || isTargetReached;
+      
+      if (isFinalizingImmediately) {
           const batterStats = { ...newStats[playerId] };
           batterStats.isOut = true;
           batterStats.dismissalText = 'run out';
@@ -470,8 +547,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
       newState.ballLog = [newBall, ...prev.ballLog];
 
       let nextPending: PendingAction = null;
-      const isAllOut = isAllOutCalculated;
-      if (!isAllOut) {
+      if (!isAllOutOutCalculated && !isLMSStarting) {
         const replaceTarget = playerId === prev.strikerId ? 'strikerId' : 'nonStrikerId';
         newState.pendingWicket = {
           outPlayerId: playerId,
@@ -488,14 +564,19 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
           replaceTarget,
           isAutoTriggered: true
         };
+      } else if (isLMSStarting) {
+        // One batter is out (playerId). The remaining batter is the other one.
+        const remainingBatterId = playerId === prev.strikerId ? prev.nonStrikerId : prev.strikerId;
+        newState.strikerId = remainingBatterId;
+        newState.nonStrikerId = '';
       } else if (newState.currentInnings === 1) {
         nextPending = { type: 'inningsTransition', message: 'End of 1st Innings', isAutoTriggered: true };
       } else {
         const runsToWin = targetScore!;
         if (newState.totalRuns >= runsToWin) {
-          newState.matchWinner = `${battingTeam.name} won!`;
+          newState.matchWinner = `${battingTeam.name} won by ${battingTeam.players.length - newState.wickets} wickets!`;
         } else {
-          newState.matchWinner = `${bowlingTeam.name} won!`;
+          newState.matchWinner = `${bowlingTeam.name} won by ${runsToWin - 1 - newState.totalRuns} runs!`;
         }
       }
 
@@ -578,6 +659,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
               Need {targetScore - totalRuns} runs off {(maxOvers * 6) - totalBalls} balls
            </div>
         )}
+
         {matchWinner && (
           <div className="mt-6 w-full p-4 bg-white text-black rounded-xl text-center">
             <p className="font-black text-xl uppercase tracking-widest">{matchWinner}</p>
@@ -611,7 +693,10 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
             </button>
             <button
               disabled={!!matchWinner || !!pendingAction || !!matchState.pendingWicket}
-              onClick={() => setPendingAction({ type: 'noBallRuns', message: 'Runs scored off No Ball?', isAutoTriggered: true })}
+              onClick={() => {
+                if (checkInningsComplete()) return;
+                setPendingAction({ type: 'noBallRuns', message: 'Runs scored off No Ball?', isAutoTriggered: true });
+              }}
               className="flex-1 bg-[#bd5326] hover:bg-[#bd5326]/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white active:scale-95 transition-all rounded-xl py-4 flex flex-col items-center justify-center shadow-lg"
             >
               <span className="text-sm font-bold">No Ball</span>
@@ -621,7 +706,10 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
           <div className="flex gap-3 w-full">
             <button
               disabled={!!matchWinner || !!pendingAction || !!matchState.pendingWicket}
-              onClick={() => setPendingAction({ type: 'wicketType', step: 'selectType', message: 'How was the wicket?' })}
+              onClick={() => {
+                if (checkInningsComplete()) return;
+                setPendingAction({ type: 'wicketType', step: 'selectType', message: 'How was the wicket?' });
+              }}
               className="flex-1 bg-[#bf1f1f] hover:bg-[#bf1f1f]/80 disabled:opacity-50 disabled:cursor-not-allowed text-white active:scale-95 transition-all rounded-xl py-4 flex flex-col items-center justify-center shadow-lg"
             >
               <span className="text-sm font-bold">Wicket</span>
@@ -640,50 +728,55 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
 
             {/* Batters */}
             <div className="flex flex-col gap-2">
-              {[
-                { p: striker, role: 'strikerId' as const },
-                { p: nonStriker, role: 'nonStrikerId' as const }
-              ].map(({ p, role }, idx) => {
-                if (!p) {
-                   return (
-                     <div key={role} className="flex justify-between items-center w-full py-1">
-                        <button 
-                          onClick={() => setPendingAction({ 
-                            type: 'selectBatter', 
-                            message: 'Select next batter', 
-                            replaceTarget: role,
-                            isAutoTriggered: true
-                          })}
-                          className="text-xs bg-white text-black px-3 py-1.5 rounded-lg font-bold hover:bg-neutral-200 transition-colors"
-                        >
-                          Select {idx === 0 ? 'Striker' : 'Non-Striker'}
-                        </button>
-                        <span className="text-sm text-neutral-500 italic">Waiting...</span>
-                     </div>
-                   );
-                }
+              {(() => {
+                const isLMSActive = wickets >= battingTeam.players.length - 1;
+                return [
+                  { p: striker, role: 'strikerId' as const },
+                  { p: nonStriker, role: 'nonStrikerId' as const }
+                ].map(({ p, role }, idx) => {
+                  if (role === 'nonStrikerId' && !p && isLMSActive) return null;
+                  
+                  if (!p) {
+                     return (
+                       <div key={role} className="flex justify-between items-center w-full py-1">
+                          <button 
+                            onClick={() => setPendingAction({ 
+                              type: 'selectBatter', 
+                              message: 'Select next batter', 
+                              replaceTarget: role,
+                              isAutoTriggered: true
+                            })}
+                            className="text-xs bg-white text-black px-3 py-1.5 rounded-lg font-bold hover:bg-neutral-200 transition-colors"
+                          >
+                            Select {idx === 0 ? 'Striker' : 'Non-Striker'}
+                          </button>
+                          <span className="text-sm text-neutral-500 italic">Waiting...</span>
+                       </div>
+                     );
+                  }
 
-                const s = stats[p.id] || { runs: 0, ballsFaced: 0 };
-                const isStriker = idx === 0 && !matchWinner && !pendingAction && !matchState.pendingWicket;
-                return (
-                  <div key={p.id} className="flex justify-between items-center w-full">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm ${isStriker ? 'text-white font-bold' : 'text-neutral-400 font-normal'}`}>
-                        {p.name} {isStriker && '*'}
+                  const s = stats[p.id] || { runs: 0, ballsFaced: 0 };
+                  const isStriker = idx === 0 && !matchWinner && !pendingAction && !matchState.pendingWicket;
+                  return (
+                    <div key={p.id} className="flex justify-between items-center w-full">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm ${isStriker ? 'text-white font-bold' : 'text-neutral-400 font-normal'}`}>
+                          {p.name} {isStriker && '*'}
+                        </span>
+                        {!matchWinner && !pendingAction && !matchState.pendingWicket && (
+                          <div className="flex gap-1 ml-2">
+                            <button onClick={() => changeBatter(p.id)} className="text-[9px] bg-white/10 text-white hover:bg-white/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Change</button>
+                            <button onClick={() => retireBatter(p.id)} className="text-[9px] bg-red-500/20 text-red-400 hover:bg-red-500/40 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Retire</button>
+                          </div>
+                        )}
+                      </div>
+                      <span className={`text-sm ${isStriker ? 'text-white font-normal' : 'text-neutral-400 font-normal'}`}>
+                        {s.runs} ({s.ballsFaced})
                       </span>
-                      {!matchWinner && !pendingAction && !matchState.pendingWicket && (
-                        <div className="flex gap-1 ml-2">
-                          <button onClick={() => changeBatter(p.id)} className="text-[9px] bg-white/10 text-white hover:bg-white/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Change</button>
-                          <button onClick={() => retireBatter(p.id)} className="text-[9px] bg-red-500/20 text-red-400 hover:bg-red-500/40 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Retire</button>
-                        </div>
-                      )}
                     </div>
-                    <span className={`text-sm ${isStriker ? 'text-white font-normal' : 'text-neutral-400 font-normal'}`}>
-                      {s.runs} ({s.ballsFaced})
-                    </span>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
               {!matchWinner && !pendingAction && !matchState.pendingWicket && nonStrikerId && (
                 <button onClick={manualSwapStrike} className="text-[10px] text-white border border-white/20 hover:bg-white/10 py-1.5 rounded-lg mt-2 font-bold uppercase tracking-wider text-center w-full">Swap Strike</button>
               )}
@@ -712,6 +805,11 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                 );
               })()}
             </div>
+          </div>
+
+          <div className="w-full">
+            <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mb-3 px-1">Recent Balls</p>
+            <RecentBalls balls={ballLog} />
           </div>
 
           <button
@@ -769,7 +867,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
             {pendingAction.type === 'wicketType' && pendingAction.step === 'selectType' && (
               <div className="grid grid-cols-2 gap-3">
                 <button 
-                  onClick={() => updateMatch('wicket', 0, 0, true, false, { dismissalType: 'bowled' })} 
+                  onClick={() => updateMatch('wicket', 0, 0, true, true, { dismissalType: 'bowled' })} 
                   className="bg-[#171717] hover:bg-white/10 text-white p-6 rounded-xl font-bold transition-colors border border-white/10 flex flex-col items-center justify-center gap-2"
                 >
                   <span className="text-lg">Bowled</span>
@@ -800,7 +898,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                 {bowlingTeam.players.map(p => (
                   <button
                     key={p.id}
-                    onClick={() => updateMatch('wicket', 0, 0, true, false, { dismissalType: pendingAction.dismissalType, fielderId: p.id })}
+                    onClick={() => updateMatch('wicket', 0, 0, true, true, { dismissalType: pendingAction.dismissalType, fielderId: p.id })}
                     className="bg-[#171717] hover:bg-white/10 text-white p-4 rounded-xl font-bold transition-colors border border-white/10"
                   >
                     {p.name}
@@ -961,18 +1059,59 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
             )}
 
             {(pendingAction.type === 'selectBowler' || (pendingAction.type === 'nextOver' && pendingAction.step === 'select')) && (
-              <div className="grid grid-cols-2 gap-3">
-                {bowlingTeam.players.map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => selectNextBowler(p.id)}
-                    className={`p-4 rounded-xl font-bold transition-colors border ${
-                      p.id === currentBowlerId ? 'bg-white text-black border-violet-400' : 'bg-neutral-800 border-neutral-700 hover:bg-neutral-700'
-                    }`}
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  {bowlingTeam.players
+                    .filter(p => {
+                      if (p.id === getLastOverBowlerId()) return false;
+                      const bStats = stats[p.id];
+                      if (showAllBowlers) {
+                        return bStats && (bStats.ballsBowled || 0) > 0;
+                      }
+                      return !bStats || (bStats.ballsBowled || 0) < matchState.maxOversPerBowler * 6;
+                    })
+                    .map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => selectNextBowler(p.id)}
+                      className={`p-4 rounded-xl font-bold transition-colors border ${
+                        p.id === currentBowlerId ? 'bg-white text-black border-violet-400' : 'bg-neutral-800 border-neutral-700 hover:bg-neutral-700'
+                      }`}
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+                {!showAllBowlers && (
+                  <button 
+                    onClick={() => setShowAllBowlers(true)}
+                    className="w-full py-3 bg-transparent border border-white/10 hover:bg-white/5 text-white/60 rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
                   >
-                    {p.name}
+                    Choose from past bowler
                   </button>
-                ))}
+                )}
+              </div>
+            )}
+
+            {pendingAction.type === 'endMatch' && (
+              <div className="text-center">
+                <p className="text-neutral-400 mb-8 px-4 text-lg leading-relaxed">
+                  Are you sure you want to end the match and declare a winner based on the current score?
+                </p>
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setPendingAction(null)}
+                    className="flex-1 py-4 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl font-bold transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmEndMatch}
+                    className="flex-1 py-4 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-red-500/20"
+                  >
+                    Confirm
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1011,7 +1150,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                     <div>
                       <label className="text-xs text-neutral-500 font-bold uppercase mb-1 block">Striker</label>
                       <select 
-                        className="w-full bg-neutral-800 p-3 rounded-lg border border-neutral-700 outline-none"
+                        className="w-full bg-neutral-800 p-3 rounded-lg border border-neutral-700 outline-none text-white"
                         value={setupStriker}
                         onChange={e => setSetupStriker(e.target.value)}
                       >
@@ -1022,7 +1161,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                     <div>
                       <label className="text-xs text-neutral-500 font-bold uppercase mb-1 block">Non-Striker</label>
                       <select 
-                        className="w-full bg-neutral-800 p-3 rounded-lg border border-neutral-700 outline-none"
+                        className="w-full bg-neutral-800 p-3 rounded-lg border border-neutral-700 outline-none text-white"
                         value={setupNonStriker}
                         onChange={e => setSetupNonStriker(e.target.value)}
                       >
@@ -1033,7 +1172,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                     <div>
                       <label className="text-xs text-neutral-500 font-bold uppercase mb-1 block">Bowler</label>
                       <select 
-                        className="w-full bg-neutral-800 p-3 rounded-lg border border-neutral-700 outline-none"
+                        className="w-full bg-neutral-800 p-3 rounded-lg border border-neutral-700 outline-none text-white"
                         value={setupBowler}
                         onChange={e => setSetupBowler(e.target.value)}
                       >
@@ -1044,7 +1183,7 @@ const MatchDashboard: React.FC<MatchDashboardProps> = ({ matchState, setMatchSta
                     <button
                       disabled={!setupStriker || !setupNonStriker || !setupBowler || setupStriker === setupNonStriker}
                       onClick={() => finalizeInningsSetup(setupStriker, setupNonStriker, setupBowler)}
-                      className="w-full py-4 bg-white text-black hover:bg-neutral-200 text-black disabled:opacity-50 text-white rounded-xl font-bold text-lg mt-2 transition-all"
+                      className="w-full py-4 bg-white text-black hover:bg-neutral-200 disabled:opacity-50 rounded-xl font-bold text-lg mt-2 transition-all"
                     >
                       Confirm Lineup
                     </button>

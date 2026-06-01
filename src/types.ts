@@ -73,6 +73,7 @@ export interface MatchState {
   stats: Record<string, PlayerStats>; // Player ID -> Stats
   isMatchStarted: boolean;
   maxOvers: number;
+  maxOversPerBowler: number;
   currentInnings: 1 | 2;
   targetScore?: number;
   matchWinner?: string;

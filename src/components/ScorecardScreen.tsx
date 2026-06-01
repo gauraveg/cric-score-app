@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { MatchState } from '../types';
+import RecentBalls from './RecentBalls';
 
 interface ScorecardScreenProps {
   matches: Record<string, MatchState>;
@@ -28,18 +29,9 @@ const ScorecardScreen: React.FC<ScorecardScreenProps> = ({ matches }) => {
     return ((runs / balls) * 6).toFixed(2);
   };
 
-  const getBatsmen = () => battingTeam.players.filter(p => {
-    const s = match.stats[p.id];
-    const isCurrentInnings = activeTab === match.currentInnings;
-    return s?.ballsFaced > 0 || (isCurrentInnings && (p.id === match.strikerId || p.id === match.nonStrikerId));
-  });
+  const getBatsmen = () => battingTeam.players;
 
-  const getBowlers = () => bowlingTeam.players.filter(p => {
-    const s = match.stats[p.id];
-    return s && (s.ballsBowled > 0 || (s.widesBowled || 0) > 0 || (s.noBallsBowled || 0) > 0);
-  });
-  
-  const getDidNotBat = () => battingTeam.players.filter(p => !getBatsmen().includes(p));
+  const getBowlers = () => bowlingTeam.players;
 
   const totalExtras = inningsData.extras.wides + inningsData.extras.noBalls + inningsData.extras.byes + inningsData.extras.legByes;
 
@@ -85,11 +77,22 @@ const ScorecardScreen: React.FC<ScorecardScreenProps> = ({ matches }) => {
               {getBatsmen().map(p => {
                 const s = match.stats[p.id] || { runs: 0, ballsFaced: 0, fours: 0, sixes: 0, isOut: false, dismissalText: '' };
                 const sr = s.ballsFaced > 0 ? ((s.runs / s.ballsFaced) * 100).toFixed(2) : '0.00';
+                
+                let statusText = '';
+                if (s.isOut) {
+                  statusText = s.dismissalText || 'out';
+                } else if (s.ballsFaced > 0 || (activeTab === match.currentInnings && (p.id === match.strikerId || p.id === match.nonStrikerId))) {
+                  statusText = 'not out';
+                } else {
+                  const isInningsOngoing = activeTab === match.currentInnings && !match.matchWinner && inningsData.wickets < battingTeam.players.length - 1;
+                  statusText = isInningsOngoing ? 'yet to bat' : 'did not bat';
+                }
+
                 return (
                   <tr key={p.id} className="hover:bg-white/5">
                     <td className="px-4 py-4">
                       <div className="font-bold text-white">{p.name}</div>
-                      <div className="text-xs text-neutral-400">{s.isOut ? s.dismissalText : 'not out'}</div>
+                      <div className="text-xs text-neutral-400">{statusText}</div>
                     </td>
                     <td className="px-4 py-4 text-right font-bold text-white">{s.runs}</td>
                     <td className="px-4 py-4 text-right text-neutral-400">{s.ballsFaced}</td>
@@ -119,13 +122,11 @@ const ScorecardScreen: React.FC<ScorecardScreenProps> = ({ matches }) => {
           </table>
         </div>
 
-        {/* Did Not Bat */}
-        {getDidNotBat().length > 0 && (
-          <div className="px-4 py-4 border-t border-white/10 flex gap-4 items-center">
-            <span className="font-bold text-sm text-white">Did not Bat</span>
-            <span className="text-sm text-neutral-400">{getDidNotBat().map(p => p.name).join(', ')}</span>
-          </div>
-        )}
+        {/* Recent Balls Timeline */}
+        <div className="px-4 py-3 border-t border-white/10 bg-white/5">
+          <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mb-2">Recent Balls</p>
+          <RecentBalls balls={inningsData.ballLog} />
+        </div>
 
         {/* Bowling Table */}
         <div className="overflow-x-auto border-t border-white/20">
@@ -142,7 +143,7 @@ const ScorecardScreen: React.FC<ScorecardScreenProps> = ({ matches }) => {
             </thead>
             <tbody className="divide-y divide-white/10">
               {getBowlers().map(p => {
-                const b = match.stats[p.id];
+                const b = match.stats[p.id] || { ballsBowled: 0, maidens: 0, runsConceded: 0, wickets: 0 };
                 const eco = b.ballsBowled > 0 ? ((b.runsConceded / b.ballsBowled) * 6).toFixed(2) : '0.00';
                 return (
                   <tr key={p.id} className="hover:bg-white/5">
